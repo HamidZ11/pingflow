@@ -1,6 +1,6 @@
-// The fictional example the site follows: the homepage demo and the
-// How it works page. Keeping the facts in one place stops the panels (and the
-// later motion pass) drifting apart.
+// The fictional example the site follows: the Sarah story on the homepage
+// and the How it works page. Keeping the facts in one place stops the
+// panels (and the later motion pass) drifting apart.
 export const scenario = {
   customer: { name: "Sarah Khan", firstName: "Sarah", initials: "SK" },
   receivedAt: { label: "14:12", dateTime: "2026-10-12T14:12" },

@@ -1,6 +1,6 @@
 import { ArrowDown } from "lucide-react";
 import { ButtonLink } from "@/components/button-link";
-import { RescheduleDemo } from "@/components/reschedule-demo/reschedule-demo";
+import { HomeStory } from "@/components/home-story";
 import { WhatsAppMark } from "@/components/whatsapp-mark";
 import { howItWorksId, startFreeHref } from "@/lib/links";
 
@@ -51,7 +51,7 @@ export function Hero() {
         </span>
         . Calendar built in.
       </p>
-      <RescheduleDemo className="mt-14 sm:mt-16 lg:mt-20" />
+      <HomeStory className="mt-8 sm:mt-10 lg:mt-14" />
     </section>
   );
 }

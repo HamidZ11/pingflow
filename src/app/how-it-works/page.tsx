@@ -109,19 +109,31 @@ const needsYou = [
   "Complaints and anything out of the ordinary",
 ];
 
+// Automatic is the default and sits on the page. What needs the owner is the
+// exception, so it sits on a quiet tinted panel: neutral, never an alert
+// colour. The automatic side gets the same vertical padding so both headings
+// stay level.
 function Rule({
   title,
   description,
   items,
   marker,
+  needsOwner = false,
 }: {
   title: string;
   description: string;
   items: string[];
   marker: string;
+  needsOwner?: boolean;
 }) {
   return (
-    <div>
+    <div
+      className={
+        needsOwner
+          ? "rounded-lg bg-sunken px-5 py-5 sm:px-6 md:py-6"
+          : "md:py-6"
+      }
+    >
       <h3 className="flex items-center gap-3 text-lead font-medium text-ink">
         <span
           aria-hidden
@@ -129,8 +141,23 @@ function Rule({
         />
         {title}
       </h3>
-      <p className="mt-1 pl-6 text-ui text-ink-3">{description}</p>
-      <ul className="mt-5 divide-y divide-line border-y border-line">
+      {/* ink-3 falls below AA on the tint, so the panel uses ink-2. */}
+      <p
+        className={cx(
+          "mt-1 pl-6 text-ui",
+          needsOwner ? "text-ink-2" : "text-ink-3",
+        )}
+      >
+        {description}
+      </p>
+      <ul
+        className={cx(
+          "mt-5 divide-y border-y",
+          needsOwner
+            ? "divide-line-strong border-line-strong"
+            : "divide-line border-line",
+        )}
+      >
         {items.map((item) => (
           <li key={item} className="py-3 text-body text-ink">
             {item}
@@ -215,18 +242,22 @@ export default function HowItWorksPage() {
               about, waits for you.
             </p>
           </div>
-          <div className="mt-10 grid gap-10 md:grid-cols-2 md:gap-12 lg:mt-14 lg:gap-16">
+          {/* automatic | needs you: a hairline between them from md; when
+              stacked, the gap and the tinted panel do the separating. */}
+          <div className="mt-10 grid gap-8 md:grid-cols-[1fr_auto_1fr] md:gap-x-10 lg:mt-14 lg:gap-x-14">
             <Rule
               title="Handled automatically"
               description="No action needed from you."
               items={automatic}
               marker="border-ink bg-accent"
             />
+            <div aria-hidden className="hidden w-px bg-line-strong md:block" />
             <Rule
               title="Needs you"
               description="Pingflow asks first, in WhatsApp."
               items={needsYou}
               marker="border-ink bg-canvas"
+              needsOwner
             />
           </div>
         </section>
