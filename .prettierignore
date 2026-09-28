@@ -1,0 +1,7 @@
+# Hand-authored product and design docs keep their own formatting.
+*.md
+pnpm-lock.yaml
+
+# Tool-managed config.
+.claude/
+.impeccable/

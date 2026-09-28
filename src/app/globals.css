@@ -1,0 +1,166 @@
+@import "tailwindcss";
+
+/*
+ * Pingflow visual system.
+ * Tailwind's default palette, type scale, radii and shadows are cleared so the
+ * page can only use the roles defined here. See DESIGN.md for the intent.
+ */
+@theme {
+  --color-*: initial;
+
+  /* Canvas and surfaces */
+  --color-canvas: #f6f5f1;
+  --color-surface: #ffffff;
+  --color-sunken: #eeece6;
+  --color-chat: #f2f0ea;
+  --color-bubble-out: #e4f1da;
+
+  /* Foreground */
+  --color-ink: #171612;
+  --color-ink-2: #55524a;
+  --color-ink-3: #67645b;
+
+  /* Lines */
+  --color-line: #e2dfd7;
+  --color-line-strong: #cfcac0;
+
+  /* Accent: marks what Pingflow understood, found or proposes. Used as a fill
+     behind ink text, or on the night surface — never as text on light. */
+  --color-accent: #d8f25c;
+
+  /* WhatsApp's brand green: only ever for its own logo. */
+  --color-whatsapp: #25d366;
+
+  /* Form fields that failed validation. */
+  --color-alert: #b3261e;
+
+  /* Night: the Pingflow working surface */
+  --color-night: #1c1b17;
+  --color-night-2: #27261f;
+  --color-night-line: #37352e;
+  --color-night-text: #f4f2ec;
+  --color-night-text-2: #aeaa9f;
+  --color-night-text-3: #8e8a7f;
+
+  --font-sans:
+    var(--font-instrument-sans), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", sans-serif;
+
+  /* Type roles */
+  --text-*: initial;
+  /* 34px at 390px wide keeps "Keep using WhatsApp." on one line. */
+  --text-display: clamp(2.125rem, 1.3rem + 3.4vw, 3.875rem);
+  --text-display--line-height: 1.03;
+  --text-display--letter-spacing: -0.034em;
+  /* The price on /pricing: the one number allowed to outsize the headline. */
+  --text-price: clamp(3.75rem, 2.9rem + 3.3vw, 5.5rem);
+  --text-price--line-height: 1;
+  --text-price--letter-spacing: -0.04em;
+  /* Section statements on secondary pages: below the h1, above titles. */
+  --text-headline: clamp(1.875rem, 1.35rem + 1.9vw, 2.75rem);
+  --text-headline--line-height: 1.1;
+  --text-headline--letter-spacing: -0.028em;
+  --text-title: clamp(1.5rem, 1.2rem + 1vw, 2rem);
+  --text-title--line-height: 1.15;
+  --text-title--letter-spacing: -0.022em;
+  --text-lead: clamp(1.0625rem, 1rem + 0.25vw, 1.1875rem);
+  --text-lead--line-height: 1.5;
+  --text-body: 1rem;
+  --text-body--line-height: 1.5;
+  --text-ui: 0.875rem;
+  --text-ui--line-height: 1.4;
+  --text-ui-sm: 0.8125rem;
+  --text-ui-sm--line-height: 1.4;
+  --text-label: 0.75rem;
+  --text-label--line-height: 1.35;
+
+  /* Radii: controls < bubbles < panels < stage */
+  --radius-*: initial;
+  --radius-xs: 4px;
+  --radius-sm: 7px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 22px;
+
+  --shadow-*: initial;
+  --shadow-raised:
+    0 1px 1px rgb(23 22 18 / 0.04), 0 6px 16px -10px rgb(23 22 18 / 0.18);
+
+  --container-page: 75rem;
+
+  /* A message settling into a chat: small rise, quick fade. */
+  --animate-message-in: message-in 240ms cubic-bezier(0.2, 0, 0, 1) both;
+
+  @keyframes message-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+  }
+}
+
+@layer base {
+  html {
+    color-scheme: light;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    html {
+      scroll-behavior: smooth;
+    }
+  }
+
+  /* Header, main, footer stack; main grows so a short page's footer still
+     sits at the bottom of the viewport. */
+  body {
+    display: flex;
+    min-height: 100dvh;
+    flex-direction: column;
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  main {
+    flex: 1 0 auto;
+  }
+
+  ::selection {
+    background-color: var(--color-accent);
+    color: var(--color-ink);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-ink);
+    outline-offset: 3px;
+  }
+}
+
+@layer components {
+  /* FAQ disclosure (<details class="disclosure">). Animates height where the
+     browser supports ::details-content and interpolate-size; elsewhere it
+     simply opens and closes. */
+  @media (prefers-reduced-motion: no-preference) {
+    .disclosure {
+      interpolate-size: allow-keywords;
+    }
+
+    .disclosure::details-content {
+      block-size: 0;
+      overflow: hidden;
+      transition:
+        block-size 220ms cubic-bezier(0.2, 0, 0, 1),
+        content-visibility 220ms allow-discrete;
+    }
+
+    .disclosure[open]::details-content {
+      block-size: auto;
+    }
+  }
+}
