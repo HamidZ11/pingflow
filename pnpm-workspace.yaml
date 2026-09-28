@@ -1,3 +1,8 @@
 allowBuilds:
   sharp: false
   unrs-resolver: false
+  # Downloads the Supabase CLI binary used by the db:* scripts.
+  supabase: true
+  # esbuild's binary arrives as a platform package; its install script
+  # only verifies it.
+  esbuild: false

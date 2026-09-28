@@ -2,6 +2,7 @@ import { ArrowRight } from "lucide-react";
 import type { Metadata } from "next";
 import { ButtonLink } from "@/components/button-link";
 import { SiteFooter } from "@/components/site-footer";
+import { SiteHeader } from "@/components/site-header";
 import { cx } from "@/lib/cx";
 import { containerClassName } from "@/lib/layout";
 import { howItWorksHref } from "@/lib/links";
@@ -10,11 +11,13 @@ export const metadata: Metadata = {
   title: "Page not found",
 };
 
-// Every unmatched URL lands here, inside the root layout (so the header is
-// already in place). Same type roles and rhythm as the other page intros.
+// Every unmatched URL lands here, inside the root layout. The root layout has
+// no header of its own (the app has different chrome), so this page brings
+// the site header. Same type roles and rhythm as the other page intros.
 export default function NotFound() {
   return (
     <>
+      <SiteHeader />
       <main>
         <section
           aria-labelledby="not-found-title"

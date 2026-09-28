@@ -335,6 +335,17 @@ For MVP:
 
 Availability = working hours − bookings − blocked time − buffers.
 
+## Regular and flexible hours
+
+Owners choose how they work, in onboarding and later in Settings:
+
+- **Regular hours**: the same weekly pattern. Pingflow only offers times inside it.
+- **Flexible hours**: for owners whose availability changes from week to week. Any time is free unless it is booked or blocked. The owner blocks time they can't work.
+
+Flexible hours still respect bookings, blocked time, service length and buffers. As a safety boundary, Pingflow only offers times between 06:00 and 22:00, so "any free time" never means the middle of the night.
+
+Switching to flexible keeps the regular pattern, so switching back restores it.
+
 ## Pingflow schedule (MVP scope)
 
 A simple schedule owned by Pingflow. It is operated primarily through WhatsApp (see Owner-facing WhatsApp); the web app shows it when a richer view genuinely helps.

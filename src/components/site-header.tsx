@@ -33,10 +33,8 @@ export function SiteHeader() {
             </li>
           ))}
           <li className="ml-3">
-            {/* Sign-in isn't built yet; prefetching it would 404. */}
             <NavLink
               href={signInHref}
-              prefetch={false}
               className={linkClassName}
               activeClassName="font-medium text-ink"
             >

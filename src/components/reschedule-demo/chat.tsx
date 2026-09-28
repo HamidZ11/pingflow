@@ -48,12 +48,15 @@ export function Bubble({
   sender,
   time,
   className,
+  delivered = true,
   children,
 }: {
   direction: "in" | "out";
   sender: string;
   time: { label: string; dateTime: string };
   className?: string;
+  /** Delivery ticks on an outgoing message; off for one that wasn't sent. */
+  delivered?: boolean;
   children: ReactNode;
 }) {
   const outgoing = direction === "out";
@@ -70,7 +73,9 @@ export function Bubble({
       {children}
       <p className="mt-0.5 flex items-center justify-end gap-1 text-label text-ink-3 tabular-nums">
         <time dateTime={time.dateTime}>{time.label}</time>
-        {outgoing && <CheckCheck aria-hidden className="size-3.5" />}
+        {outgoing && delivered && (
+          <CheckCheck aria-hidden className="size-3.5" />
+        )}
       </p>
     </div>
   );
