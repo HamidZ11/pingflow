@@ -1,5 +1,6 @@
 import { ArrowLeft } from "lucide-react";
 import type { Metadata } from "next";
+import { deliveryLabel } from "@/domain/channel/delivery";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
@@ -136,14 +137,21 @@ export default async function CustomerPage({
                             : "Pingflow"
                       }
                       time={{ label: m.time, dateTime: m.dateTime }}
-                      delivered={!m.simulated}
+                      delivered={["delivered", "read"].includes(m.delivery)}
                     >
                       <p>{m.body}</p>
                     </Bubble>
-                    {m.simulated && (
+                    {m.simulated ? (
                       <span className="mt-1 text-label text-ink-3">
                         Not sent: WhatsApp isn’t connected yet
                       </span>
+                    ) : (
+                      m.direction === "outbound" &&
+                      deliveryLabel(m.delivery) && (
+                        <span className="mt-1 text-label text-ink-3">
+                          {deliveryLabel(m.delivery)}
+                        </span>
+                      )
                     )}
                     {m.simulatedInbound && (
                       <span className="mt-1 text-label text-ink-3">

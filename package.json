@@ -20,7 +20,8 @@
     "db:types": "supabase gen types typescript --local > src/lib/supabase/database.types.ts && prettier --write src/lib/supabase/database.types.ts",
     "db:seed": "tsx --env-file=.env.local scripts/seed-demo.ts",
     "ai:eval": "tsx --env-file-if-exists=.env.local scripts/ai-eval.ts",
-    "ai:smoke": "tsx --env-file-if-exists=.env.local scripts/ai-smoke.ts"
+    "ai:smoke": "tsx --env-file-if-exists=.env.local scripts/ai-smoke.ts",
+    "whatsapp": "tsx --env-file-if-exists=.env.local scripts/whatsapp.ts"
   },
   "dependencies": {
     "@date-fns/tz": "^1.5.0",

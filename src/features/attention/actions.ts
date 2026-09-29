@@ -24,6 +24,7 @@ import {
   loadAutomation,
   loadEngineContext,
 } from "@/features/schedule/engine-context";
+import { sendAfterResponse } from "@/features/whatsapp/server";
 import { type Owner, requireOwner } from "@/lib/auth/session";
 import { type ActionResult, friendlyError } from "@/lib/errors";
 
@@ -31,7 +32,9 @@ import { type ActionResult, friendlyError } from "@/lib/errors";
 // request, re-checks the schedule with the availability engine, works out
 // the messages and reminder in the domain layer, and then applies everything
 // in one database transaction (resolve_reschedule_request,
-// resolve_booking_request or resolve_cancellation_request).
+// resolve_booking_request or resolve_cancellation_request). A reply that
+// transaction queued for WhatsApp is sent once the response has gone; the
+// booking change never waits for WhatsApp, and never rolls back for it.
 
 async function loadRequest(owner: Owner, actionId: string) {
   const { data, error } = await owner.supabase
@@ -169,6 +172,7 @@ async function approveMove(
   if (error)
     return { ok: false, error: friendlyError(error, "approveReschedule") };
 
+  sendAfterResponse();
   refresh();
   return {
     ok: true,
@@ -231,6 +235,7 @@ async function approveBooking(
   if (error)
     return { ok: false, error: friendlyError(error, "approveBooking") };
 
+  sendAfterResponse();
   refresh();
   return {
     ok: true,
@@ -263,6 +268,7 @@ async function approveCancellation(
   if (error)
     return { ok: false, error: friendlyError(error, "approveCancellation") };
 
+  sendAfterResponse();
   refresh();
   return {
     ok: true,
@@ -329,6 +335,7 @@ export async function declineRequest(actionId: string): Promise<ActionResult> {
   if (error)
     return { ok: false, error: friendlyError(error, "declineRequest") };
 
+  sendAfterResponse();
   refresh();
   return { ok: true, message: outcome };
 }
@@ -376,8 +383,28 @@ export async function replyToMessage(
   });
   if (error)
     return { ok: false, error: friendlyError(error, "replyToMessage") };
+  sendAfterResponse();
   refresh();
-  return { ok: true, message: "Reply recorded." };
+
+  // Say what actually happens to it, from the message that was stored.
+  const { data: sent } = await owner.supabase
+    .from("activity_events")
+    .select("message:messages ( delivery )")
+    .eq("business_id", owner.business.id)
+    .eq("pending_action_id", actionId)
+    .eq("kind", "reply_sent")
+    .limit(1)
+    .maybeSingle();
+  const delivery = sent?.message?.delivery;
+  return {
+    ok: true,
+    message:
+      delivery === "queued"
+        ? "Sending your reply on WhatsApp."
+        : delivery === "blocked"
+          ? "Saved, but WhatsApp won’t allow it from here. Reply in WhatsApp."
+          : "Reply recorded.",
+  };
 }
 
 export async function dismissNote(actionId: string): Promise<ActionResult> {

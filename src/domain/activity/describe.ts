@@ -1,3 +1,15 @@
+import { type Delivery, deliveryLabel } from "@/domain/channel/delivery";
+import {
+  type ContentType,
+  contentNoun,
+  contentPlural,
+  contentTypes,
+} from "@/domain/channel/inbound";
+import {
+  describeNotSent,
+  notSentReason,
+  reminderNotSentReason,
+} from "@/domain/channel/not-sent";
 import { serviceNoun } from "@/domain/messages/templates";
 import { readBookingUnderstanding } from "@/domain/requests/booking";
 import {
@@ -36,7 +48,10 @@ export type ActivityKind =
   | "block_removed"
   | "customer_added"
   | "automation_resumed"
-  | "reply_needed";
+  | "reply_needed"
+  | "message_not_sent"
+  | "reminder_sent"
+  | "reminder_not_sent";
 
 export type ActivityActor = "contact" | "pingflow" | "owner";
 
@@ -51,6 +66,9 @@ export type ActivityRecord = {
   contactName?: string | null;
   serviceName: string | null;
   messageBody: string | null;
+  /** What happened to the linked message, if there is one. */
+  messageDelivery?: Delivery | null;
+  messageContentType?: ContentType | null;
 };
 
 export type ActivityLine = {
@@ -59,6 +77,8 @@ export type ActivityLine = {
   quote: string | null;
   /** An outbound message that was recorded but not really sent. */
   simulated: boolean;
+  /** "Delivered", "Read", "Not sent"… for a message Pingflow sent. */
+  delivery: string | null;
 };
 
 function instant(value: unknown): Date | null {
@@ -72,8 +92,18 @@ function possessive(name: string) {
 }
 
 /** Why a message was left for the owner to answer. */
-function replyNeeded(reason: unknown, who: string): string {
+function replyNeeded(
+  reason: unknown,
+  who: string,
+  contentType?: unknown,
+): string {
   switch (reason) {
+    case "unsupported_content":
+      return `Pingflow can’t handle ${contentPlural(
+        contentTypes.includes(contentType as ContentType)
+          ? (contentType as ContentType)
+          : "unknown",
+      )} yet and left it for you`;
     case "clarification_exhausted":
       return `Pingflow wasn’t sure what ${who} meant and left it for you`;
     case "interpreter_unavailable":
@@ -111,7 +141,10 @@ export function describeActivity(
     const value = instant(d[key]);
     return value ? formatDateTime(value, timeZone) : "an earlier time";
   };
-  const simulated = d.delivery === "simulated";
+  // The message's own state, not what was expected when it was written.
+  const delivery = event.messageDelivery ?? null;
+  const simulated =
+    delivery === "simulated" || (!delivery && d.delivery === "simulated");
 
   // What a request_understood entry records, by what was asked.
   const understood = (details: Record<string, unknown>): string => {
@@ -148,11 +181,19 @@ export function describeActivity(
     text,
     quote,
     simulated,
+    delivery:
+      delivery && delivery !== "received" && !simulated
+        ? deliveryLabel(delivery)
+        : null,
   });
 
   switch (event.kind) {
-    case "message_received":
-      return line(`${named ?? "Someone"} sent a message`, event.messageBody);
+    case "message_received": {
+      const type = event.messageContentType ?? "text";
+      return type === "text"
+        ? line(`${named ?? "Someone"} sent a message`, event.messageBody)
+        : line(`${named ?? "Someone"} sent ${contentNoun(type)}`);
+    }
     case "request_understood":
       return line(`Pingflow understood: ${understood(d)}`);
     case "time_proposed": {
@@ -216,32 +257,36 @@ export function describeActivity(
       );
     case "booking_cancelled":
       return line(`${whose} ${service} on ${at("starts_at")} was cancelled`);
-    // A simulated message was written but not sent (WhatsApp isn't
-    // connected), so it isn't described as sent.
+    // Worded the same whatever happened; the delivery label says whether
+    // it was sent, delivered, read or not sent.
     case "confirmation_sent":
-      return line(
-        simulated ? `Confirmation to ${who}` : `Confirmation sent to ${who}`,
-        event.messageBody,
-      );
+      return line(`Confirmation to ${who}`, event.messageBody);
     case "reply_sent":
       if (event.actor === "owner") {
-        return line(
-          simulated ? `Your reply to ${who}` : `You replied to ${who}`,
-          event.messageBody,
-        );
+        return line(`Your reply to ${who}`, event.messageBody);
       }
       if (d.reply_kind === "clarification") {
-        return line(
-          simulated ? `Question to ${who}` : `Question sent to ${who}`,
-          event.messageBody,
-        );
+        return line(`Question to ${who}`, event.messageBody);
       }
+      return line(`Reply to ${who}`, event.messageBody);
+    case "message_not_sent":
       return line(
-        simulated ? `Reply to ${who}` : `Reply sent to ${who}`,
-        event.messageBody,
+        `${
+          describeNotSent({
+            purpose: typeof d.purpose === "string" ? d.purpose : null,
+            cause: typeof d.reason === "string" ? d.reason : null,
+            who,
+          }).title
+        }. ${notSentReason(typeof d.reason === "string" ? d.reason : null)}`,
+      );
+    case "reminder_sent":
+      return line(`Reminder to ${who}`, event.messageBody);
+    case "reminder_not_sent":
+      return line(
+        `Reminder to ${who} not sent: ${reminderNotSentReason(typeof d.reason === "string" ? d.reason : null)}`,
       );
     case "reply_needed":
-      return line(replyNeeded(d.reason, named ?? "someone"));
+      return line(replyNeeded(d.reason, named ?? "someone", d.content_type));
     case "reminder_scheduled":
       return line(`Reminder set for ${at("send_at")}`);
     case "reminder_rescheduled":

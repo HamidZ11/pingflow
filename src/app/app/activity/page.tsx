@@ -82,9 +82,9 @@ export default async function ActivityPage() {
                         ) : (
                           entry.text
                         )}
-                        {entry.simulated && (
+                        {(entry.simulated || entry.delivery) && (
                           <span className="ml-2 inline-block rounded-xs bg-sunken px-1.5 py-px align-[1px] text-label text-ink-2">
-                            Simulated
+                            {entry.simulated ? "Simulated" : entry.delivery}
                           </span>
                         )}
                       </p>

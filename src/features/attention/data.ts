@@ -5,6 +5,9 @@ import {
   type Relationship,
   relationshipLabels,
 } from "@/domain/contacts/phone";
+import { type ContentType, contentTypes } from "@/domain/channel/inbound";
+import { describeNotSent } from "@/domain/channel/not-sent";
+import { serviceWindow } from "@/domain/channel/window";
 import type { Intent } from "@/domain/messages/interpretation";
 import { firstName, serviceNoun } from "@/domain/messages/templates";
 import {
@@ -124,6 +127,14 @@ export type Proposal = {
   reason: string;
 };
 
+/**
+ * Where a reply to this conversation goes: recorded only (WhatsApp isn't
+ * connected, or it came from the simulator), or WhatsApp, where free text
+ * is only allowed within 24 hours of their last message.
+ */
+export type ReplyChannel =
+  { kind: "simulated" } | { kind: "whatsapp"; windowOpen: boolean };
+
 type RequestBase = {
   id: string;
   receivedAt: string;
@@ -131,6 +142,7 @@ type RequestBase = {
   customer: Customer;
   message: InboundMessage | null;
   headline: string;
+  channel: ReplyChannel;
 };
 
 export type RescheduleItem = RequestBase & {
@@ -180,6 +192,7 @@ export type ReplyItem = {
   explanation: string | null;
   message: InboundMessage | null;
   draft: string | null;
+  channel: ReplyChannel;
 };
 
 export type NoteItem = {
@@ -189,6 +202,7 @@ export type NoteItem = {
   receivedLabel: string;
   customer: { id: string; name: string } | null;
   title: string;
+  explanation: string | null;
   body: string | null;
 };
 
@@ -205,7 +219,7 @@ export async function loadAttention(
   const { data, error } = await owner.supabase
     .from("pending_actions")
     .select(
-      `id, kind, understood, proposed_starts_at, proposed_ends_at, created_at,
+      `id, kind, understood, proposed_starts_at, proposed_ends_at, created_at, conversation_id,
        customer:customers (
          id, full_name,
          links:customer_contacts ( relationship, contact:contacts ( display_name, phone_e164 ) )
@@ -222,6 +236,14 @@ export async function loadAttention(
     .eq("status", "open")
     .order("created_at", { ascending: true });
   if (error) throw error;
+
+  const channels = await loadChannels(
+    owner,
+    data.flatMap((row) => (row.conversation_id ? [row.conversation_id] : [])),
+    now,
+  );
+  const channelOf = (conversationId: string | null): ReplyChannel =>
+    (conversationId && channels.get(conversationId)) || { kind: "simulated" };
 
   const needsServices = data.some((row) => row.kind === "booking_request");
   const services = needsServices ? await loadServices(owner) : new Map();
@@ -256,6 +278,7 @@ export async function loadAttention(
       receivedAt: row.created_at,
       receivedLabel,
       message,
+      channel: channelOf(row.conversation_id),
     };
 
     if (row.kind === "reply_needed") {
@@ -280,6 +303,11 @@ export async function loadAttention(
         who,
         noun: serviceNoun(services.values().next().value?.name ?? "booking"),
         hasDraft: Boolean(draft),
+        contentType: contentTypes.includes(
+          understood.content_type as ContentType,
+        )
+          ? (understood.content_type as ContentType)
+          : null,
       });
       items.push({
         type: "reply",
@@ -300,7 +328,37 @@ export async function loadAttention(
       continue;
     }
 
-    if (row.kind === "failure" || !customer) {
+    if (row.kind === "failure") {
+      const understood = (row.understood ?? {}) as Record<string, unknown>;
+      if (understood.reason === "message_not_sent") {
+        const contact = row.conversation?.contact ?? null;
+        const described = describeNotSent({
+          purpose:
+            typeof understood.purpose === "string" ? understood.purpose : null,
+          cause: typeof understood.cause === "string" ? understood.cause : null,
+          who:
+            customer?.firstName ??
+            contact?.display_name ??
+            (contact ? formatPhone(contact.phone_e164) : "them"),
+        });
+        items.push({
+          ...note(row, receivedLabel, described.title),
+          explanation: described.explanation,
+        });
+      } else {
+        items.push(
+          note(
+            row,
+            receivedLabel,
+            typeof understood.summary === "string"
+              ? understood.summary
+              : undefined,
+          ),
+        );
+      }
+      continue;
+    }
+    if (!customer) {
       items.push(note(row, receivedLabel));
       continue;
     }
@@ -450,6 +508,7 @@ export async function loadAttention(
 type Row = {
   id: string;
   kind: string;
+  conversation_id: string | null;
   customer: { id: string; full_name: string } | null;
   message: { body: string } | null;
 };
@@ -468,8 +527,69 @@ function note(row: Row, receivedLabel: string, summary?: string): NoteItem {
       (row.kind === "failure"
         ? "Something didn’t go through"
         : "A message needs your reply"),
+    explanation: null,
     body: row.message?.body ?? null,
   };
+}
+
+/**
+ * The reply channel for each conversation: WhatsApp when the business is
+ * connected and the conversation's latest message came in on WhatsApp
+ * (with the 24-hour window worked out from it), otherwise recorded only.
+ */
+async function loadChannels(
+  owner: Owner,
+  conversationIds: string[],
+  now: Date,
+): Promise<Map<string, ReplyChannel>> {
+  const channels = new Map<string, ReplyChannel>();
+  if (conversationIds.length === 0) return channels;
+  const { data: connection, error } = await owner.supabase
+    .from("whatsapp_connections")
+    .select("status")
+    .eq("business_id", owner.business.id)
+    .in("status", ["connected", "needs_attention"])
+    .maybeSingle();
+  if (error) throw error;
+  if (!connection) return channels;
+
+  const { data: inbound, error: inboundError } = await owner.supabase
+    .from("messages")
+    .select("conversation_id, source, sent_at")
+    .eq("business_id", owner.business.id)
+    .eq("direction", "inbound")
+    .in("conversation_id", [...new Set(conversationIds)])
+    .order("sent_at", { ascending: false })
+    .limit(1000);
+  if (inboundError) throw inboundError;
+  const latest = new Map<
+    string,
+    { source: string; lastWhatsApp: Date | null }
+  >();
+  for (const m of inbound) {
+    const seen = latest.get(m.conversation_id);
+    if (!seen) {
+      latest.set(m.conversation_id, {
+        source: m.source,
+        lastWhatsApp: m.source === "whatsapp" ? new Date(m.sent_at) : null,
+      });
+    } else if (!seen.lastWhatsApp && m.source === "whatsapp") {
+      seen.lastWhatsApp = new Date(m.sent_at);
+    }
+  }
+  for (const id of conversationIds) {
+    const l = latest.get(id);
+    channels.set(
+      id,
+      !l || l.source === "whatsapp"
+        ? {
+            kind: "whatsapp",
+            windowOpen: serviceWindow(l?.lastWhatsApp ?? null, now).open,
+          }
+        : { kind: "simulated" },
+    );
+  }
+  return channels;
 }
 
 function summariseService(

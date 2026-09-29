@@ -1,3 +1,8 @@
+import {
+  type ContentType,
+  contentNoun,
+  contentPlural,
+} from "@/domain/channel/inbound";
 import type { Intent } from "@/domain/messages/interpretation";
 import type { OwnerTaskReason } from "@/domain/messages/policy";
 
@@ -25,6 +30,8 @@ export function describeOwnerTask(input: {
   /** "driving lesson", for "asked when the next driving lesson is". */
   noun: string;
   hasDraft: boolean;
+  /** For a message Pingflow couldn't read (a photo, a voice note). */
+  contentType?: ContentType | null;
 }): OwnerTaskDescription {
   const { who, intent } = input;
   const drafted = input.hasDraft
@@ -87,6 +94,13 @@ export function describeOwnerTask(input: {
       };
     case "business_question":
       return { title: `${who} asked a question`, explanation: drafted };
+    case "unsupported_content": {
+      const type = input.contentType ?? "unknown";
+      return {
+        title: `${who} sent ${contentNoun(type)}`,
+        explanation: `Pingflow can’t handle ${contentPlural(type)} yet, so it’s over to you.`,
+      };
+    }
     case "no_booking_found":
       return {
         title: `${who} asked about a booking Pingflow can’t find`,

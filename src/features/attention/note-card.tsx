@@ -31,6 +31,9 @@ export function NoteCard({ item }: { item: NoteItem }) {
           <p className="mt-0.5 text-ui-sm text-ink-3">
             {item.customer?.name ?? "Unknown contact"} · {item.receivedLabel}
           </p>
+          {item.explanation && (
+            <p className="mt-2 text-ui text-ink-2">{item.explanation}</p>
+          )}
           {item.body && (
             <p className="mt-3 rounded-md bg-chat px-3 py-2 text-ui text-ink">
               {item.body}

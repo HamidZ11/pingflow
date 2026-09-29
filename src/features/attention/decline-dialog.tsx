@@ -3,11 +3,14 @@
 import { Overlay } from "@/components/app/overlay";
 import { Spinner } from "@/components/app/spinner";
 import { Button } from "@/components/button-link";
+import { channelNote } from "@/features/attention/channel-note";
+import type { ReplyChannel } from "@/features/attention/data";
 // Declining messages the customer, so the reply is shown before it goes.
 export function DeclineDialog({
   title,
   description,
   reply,
+  channel,
   open,
   busy,
   error,
@@ -17,6 +20,7 @@ export function DeclineDialog({
   title: string;
   description: string;
   reply: string;
+  channel: ReplyChannel;
   open: boolean;
   busy: boolean;
   error: string | null;
@@ -65,7 +69,7 @@ export function DeclineDialog({
         </p>
       </div>
       <p className="mt-3 text-ui-sm text-ink-3">
-        WhatsApp isn’t connected yet, so this is recorded but not sent.
+        {channelNote(channel, "confirmation")}
       </p>
     </Overlay>
   );

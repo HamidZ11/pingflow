@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { type ContentType, contentTypes } from "@/domain/channel/inbound";
 import { parsePhone } from "@/domain/contacts/phone";
 import type { CustomerBooking } from "@/domain/messages/booking-reference";
 import {
@@ -63,6 +64,8 @@ export type InboundMessage = {
   /** The provider's message ID, or a simulation ID. */
   externalId: string;
   source: "whatsapp" | "simulator";
+  /** Text unless said otherwise. Anything else goes to the owner unread. */
+  contentType?: ContentType;
 };
 
 export type UsageReport = {
@@ -113,6 +116,9 @@ export async function processInboundMessage(
   const phone = parsePhone(message.from);
   if (!phone) throw new PipelineError("That isn't a phone number.");
   if (!message.body.trim()) throw new PipelineError("The message is empty.");
+  if (message.contentType && !contentTypes.includes(message.contentType)) {
+    throw new PipelineError("Unknown content type.");
+  }
 
   const { data, error } = await deps.db.rpc("ingest_inbound_message", {
     p_business_id: message.businessId,
@@ -121,6 +127,7 @@ export async function processInboundMessage(
     p_received_at: (message.receivedAt ?? new Date()).toISOString(),
     p_external_id: message.externalId,
     p_source: message.source,
+    p_content_type: message.contentType ?? "text",
   });
   if (error || !data)
     throw new PipelineError(error?.message ?? "Ingest failed");
@@ -273,6 +280,61 @@ async function processClaimedRun(
       attempt,
       decision: "no_action",
       reason: "owner_handling",
+    });
+    return {
+      ...base,
+      status: "completed",
+      interpreter: null,
+      model: null,
+      promptVersion: null,
+      created,
+    };
+  }
+
+  // A photo, a voice note, a location: Pingflow only reads text, so the
+  // owner gets it, without asking a model to guess.
+  if (message.content_type !== "text") {
+    const identity = resolveIdentity(links, null);
+    const customerId =
+      identity.kind === "customer" ? identity.customer.id : null;
+    const task = {
+      reason: "unsupported_content",
+      intent: null,
+      draft: null,
+      content_type: message.content_type,
+    };
+    const created = await complete(db, runId, attempt, {
+      interpreter: null,
+      model: null,
+      prompt_version: null,
+      interpretation: null,
+      decision: "owner_reply_task",
+      decision_detail: {
+        reason: "unsupported_content",
+        content_type: message.content_type,
+      },
+      customer_id: customerId,
+      reply: null,
+      approval: null,
+      owner_task: task,
+      clarification: null,
+      activity: [
+        {
+          kind: "reply_needed",
+          actor: "pingflow",
+          details: task,
+          customer_id: customerId,
+          booking_id: null,
+          link: "task",
+        },
+      ],
+    });
+    deps.log?.("message.processed", {
+      messageId: message.id,
+      runId,
+      attempt,
+      decision: "owner_reply_task",
+      reason: "unsupported_content",
     });
     return {
       ...base,
@@ -495,7 +557,7 @@ async function loadRunContext(db: Db, runId: string) {
     .from("message_processing_runs")
     .select(
       `id, business_id, message_id, conversation_id,
-       message:messages!message_processing_runs_business_id_message_id_fkey ( id, body, sent_at ),
+       message:messages!message_processing_runs_business_id_message_id_fkey ( id, body, sent_at, content_type ),
        conversation:conversations ( id, contact_id, clarification, automation_paused_at )`,
     )
     .eq("id", runId)

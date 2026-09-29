@@ -357,6 +357,7 @@ export function TimedRequestCard({ item }: { item: TimedRequestItem }) {
             : "Nothing will be booked."
         }
         reply={item.declineReply}
+        channel={item.channel}
         open={answer.sheet === "decline"}
         busy={busy === "decline"}
         error={answer.sheet === "decline" ? answer.error : null}
@@ -449,6 +450,7 @@ export function CancellationCard({ item }: { item: CancellationItem }) {
         title={`Decline ${item.customer.firstName}’s cancellation?`}
         description={`The booking stays on ${item.booking.day}, ${item.booking.time}.`}
         reply={item.declineReply}
+        channel={item.channel}
         open={answer.sheet === "decline"}
         busy={busy === "decline"}
         error={answer.sheet === "decline" ? answer.error : null}

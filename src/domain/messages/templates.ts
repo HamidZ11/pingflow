@@ -76,3 +76,12 @@ export function cancellationDecline(input: {
 }): string {
   return `Hi ${firstName(input.customerName)}, I can’t cancel this one, sorry. Your ${serviceNoun(input.serviceName)} is still on ${longWhen(input.startsAt, input.timeZone)}.`;
 }
+
+export function reminderMessage(input: {
+  customerName: string;
+  serviceName: string;
+  startsAt: Date;
+  timeZone: string;
+}): string {
+  return `Hi ${firstName(input.customerName)}, just a reminder: your ${serviceNoun(input.serviceName)} is on ${longWhen(input.startsAt, input.timeZone)}. See you then!`;
+}

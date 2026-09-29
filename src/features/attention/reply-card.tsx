@@ -10,6 +10,7 @@ import { useToast } from "@/components/app/toaster";
 import { Button } from "@/components/button-link";
 import { Bubble } from "@/components/reschedule-demo/chat";
 import { dismissNote, replyToMessage } from "@/features/attention/actions";
+import { canSendReply, channelNote } from "@/features/attention/channel-note";
 import type { ReplyItem } from "@/features/attention/data";
 
 // A message Pingflow left for the owner to answer: it wasn't sure what it
@@ -123,6 +124,8 @@ function ReplySheet({
   const [body, setBody] = useState(item.draft ?? "");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const whatsapp = item.channel.kind === "whatsapp";
+  const sendable = canSendReply(item.channel);
 
   function send() {
     setError(null);
@@ -153,12 +156,17 @@ function ReplySheet({
           <Button variant="ghost" disabled={pending} onClick={onClose}>
             Cancel
           </Button>
-          <Button disabled={pending || !body.trim()} onClick={send}>
+          <Button
+            disabled={pending || !body.trim() || !sendable}
+            onClick={send}
+          >
             {pending ? (
               <>
                 <Spinner />
-                Recording…
+                {whatsapp ? "Sending…" : "Recording…"}
               </>
+            ) : whatsapp ? (
+              "Send reply"
             ) : (
               "Record reply"
             )}
@@ -195,9 +203,9 @@ function ReplySheet({
       {error && <FieldError id={`${id}-error`}>{error}</FieldError>}
       <p id={`${id}-note`} className="mt-3 text-ui-sm text-ink-3">
         {item.draft
-          ? "Pingflow drafted this from what it knows. Check it before you record it. "
+          ? "Pingflow drafted this from what it knows. Check it first. "
           : ""}
-        WhatsApp isn’t connected yet, so this is recorded but not sent.
+        {channelNote(item.channel, "reply")}
       </p>
     </Overlay>
   );

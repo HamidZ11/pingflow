@@ -238,6 +238,7 @@ export async function loadCustomer(owner: Owner, id: string, now = new Date()) {
         author: m.author,
         body: m.body,
         simulated: m.delivery === "simulated",
+        delivery: m.delivery,
         /** Came from the development simulator, not a real WhatsApp message. */
         simulatedInbound: m.direction === "inbound" && m.source === "simulator",
         time: formatRelativeDateTime(new Date(m.sent_at), now, tz),

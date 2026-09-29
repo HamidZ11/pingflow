@@ -3,7 +3,6 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { PageHeader, pageClassName } from "@/components/app/page-header";
 import { Button } from "@/components/button-link";
-import { WhatsAppMark } from "@/components/whatsapp-mark";
 import { defaultWeekHours, weekdays } from "@/domain/onboarding/setup";
 import { formatLeadTime } from "@/domain/time/format";
 import {
@@ -15,6 +14,8 @@ import {
   ScheduleForm,
   ServicesForm,
 } from "@/features/settings/settings-forms";
+import { loadWhatsAppSettings } from "@/features/whatsapp/settings-data";
+import { WhatsAppSettingsCard } from "@/features/whatsapp/whatsapp-settings";
 import { signOut } from "@/lib/auth/actions";
 import { requireOwner } from "@/lib/auth/session";
 
@@ -60,7 +61,7 @@ function Section({
 
 export default async function SettingsPage() {
   const owner = await requireOwner();
-  const [business, services, hours, automation] = await Promise.all([
+  const [business, services, hours, automation, whatsapp] = await Promise.all([
     owner.supabase
       .from("businesses")
       .select("name, business_type, schedule_mode")
@@ -80,6 +81,7 @@ export default async function SettingsPage() {
       .order("position"),
     loadWorkingHours(owner),
     loadAutomation(owner),
+    loadWhatsAppSettings(owner),
   ]);
   if (business.error) throw business.error;
   if (services.error) throw services.error;
@@ -173,24 +175,10 @@ export default async function SettingsPage() {
         </Section>
 
         <Section id="whatsapp" title="WhatsApp">
-          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-surface px-4 py-4">
-            <span className="grid size-10 place-items-center rounded-md bg-sunken">
-              <WhatsAppMark className="size-5 text-whatsapp" />
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="text-ui font-medium text-ink">WhatsApp Business</p>
-              <p className="text-ui-sm text-ink-3">
-                Not connected. Connecting your number is coming next.
-              </p>
-            </div>
-            <Button variant="secondary" disabled>
-              Connect
-            </Button>
-          </div>
-          <p className="mt-2 text-ui-sm text-ink-3">
-            Until it’s connected, nothing is sent to customers. Messages
-            Pingflow would send are recorded in Activity.
-          </p>
+          <WhatsAppSettingsCard
+            settings={whatsapp}
+            developerHint={process.env.NODE_ENV === "development"}
+          />
         </Section>
 
         <Section id="reminders" title="Reminders">

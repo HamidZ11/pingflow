@@ -570,10 +570,10 @@ test("a failed call that was billed and its retry are two rows; nothing more", a
   const retried = await reprocessRun(deps(openai.interpreter), report.runId);
   expect(retried.status).toBe("completed");
   const rows = await usageFor(report.runId);
-  expect(rows.map((r) => r.metadata)).toEqual([
-    expect.objectContaining({ outcome: "incomplete" }),
-    expect.objectContaining({ outcome: "interpreted" }),
-  ]);
+  // Two calls, two rows, in whatever order they come back.
+  expect(
+    rows.map((r) => (r.metadata as { outcome?: string }).outcome).sort(),
+  ).toEqual(["incomplete", "interpreted"]);
   expect(new Set(rows.map((r) => r.external_reference)).size).toBe(2);
 
   // A completed run is never sent again.

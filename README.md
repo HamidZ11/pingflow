@@ -25,6 +25,10 @@ cp .env.example .env.local
 | `OPENAI_MESSAGE_MODEL` | Optional. The model for reading messages, default `gpt-5.6-luna` |
 | `OPENAI_MESSAGE_REASONING_EFFORT` | Optional. `none`, `minimal`, `low` (default) or `medium` |
 | `PINGFLOW_MESSAGE_INTERPRETER` | Development only. `fixture` reads the sample messages without calling OpenAI; ignored in production |
+| `WHATSAPP_VERIFY_TOKEN` | Optional, server-side only: the webhook's subscription handshake. Any long random string, also entered in Meta's App Dashboard |
+| `META_APP_SECRET` | Optional, server-side only: the Meta app's App Secret. Every webhook POST is checked against it |
+| `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_WABA_ID` | Optional, server-side only: the developer connection (one test or business number) |
+| `WHATSAPP_WORKER_SECRET` | Optional, server-side only: authorises the scheduled worker route |
 | `DEMO_OWNER_EMAIL` | The email the demo business is created for |
 | `LOCAL_MAIL_INBOX_URL` | Local development only: the mail catcher, `http://127.0.0.1:54324`. Adds an "Open test inbox" link to "Check your email" in `pnpm dev`; never shown in a production build |
 
@@ -55,9 +59,7 @@ A business has regular hours (bookable inside its weekly pattern) or flexible ho
 
 ## Messages
 
-WhatsApp isn't connected yet. Inbound messages are simulated, and Pingflow's replies are stored as simulated (shown as "Not sent" in the app). There are no Meta webhooks, templates or tokens yet.
-
-Every message goes through one function, `processInboundMessage` in `src/features/messages/pipeline.ts`, which the WhatsApp webhook will call too:
+Every message goes through one function, `processInboundMessage` in `src/features/messages/pipeline.ts`, whether it came from WhatsApp (see [WhatsApp](#whatsapp)) or the development simulator:
 
 1. Store the message once, by its external ID. A repeated delivery returns the earlier result and changes nothing.
 2. Claim it. Messages in one conversation are handled one at a time, oldest first; other conversations aren't held up.
@@ -91,9 +93,60 @@ Two opt-in commands use the real API. They cost money, need `OPENAI_API_KEY` in 
 - `pnpm ai:eval` sends all 41 corpus messages (`--limit 20` for fewer) and judges each reading by what Pingflow would then do: intent, dates, times, person, service, clarification, outcome and structured-output validity, with each miss rated critical, important or minor. It counts every API request, stops rather than exceed one retry per message, and reports latency, tokens, cache hits and cost. Results are saved to `results/ai-evals/` (git-ignored) as JSON: the synthetic messages, readings and totals, never keys. It writes nothing to the database.
 - `pnpm ai:smoke` sends five messages (next booking, availability, reschedule, an unclear one and a cancellation) through the whole pipeline into a fresh local demo business, `ai-smoke@pingflow.test`, and checks the replies, Attention, that no booking changed, and the usage ledger.
 
+## WhatsApp
+
+Pingflow talks to customers through the WhatsApp Cloud API (Graph API v26.0, pinned in `src/lib/whatsapp/config.ts`). It's a channel around the message pipeline, not a second one:
+
+```
+Meta webhook → signature check → whatsapp_events (inbox) → worker
+  → processInboundMessage (the same pipeline as the simulator)
+  → outbound message, created where it always was → message_deliveries (outbox)
+  → worker → send policy → WhatsApp Cloud API → status webhooks → delivered, read, failed
+```
+
+- **Webhook**, `/api/webhooks/whatsapp`. `GET` answers Meta's subscription handshake (`hub.mode`, `hub.verify_token`, `hub.challenge`). `POST` checks `X-Hub-Signature-256` (HMAC-SHA256 of the raw body with `META_APP_SECRET`) before parsing anything, stores each event once by its message or status ID, and answers straight away. Meta retries for up to 36 hours; a repeat is stored once.
+- **Routing** is by Meta's phone number ID to the business's connection, never by the customer's number. Events for an unknown number are kept as unroutable; a disconnected business's messages are ignored.
+- **Inbound.** Text goes through the pipeline exactly as before. Photos, voice notes, documents, locations and the like are stored and go to the owner in Attention without calling the model; reactions and stickers are recorded and left alone. A customer's messages are handled one at a time, oldest first.
+- **Outbound.** Replies, confirmations and reminders are still created in the same transaction as the change they report. If the business is connected and the conversation came in on WhatsApp, the message is queued; a development-simulator conversation is never sent to a real number. The worker sends after the transaction, so a slow or failing WhatsApp never holds up or rolls back a booking change.
+- **Send policy** (`src/domain/channel/send-policy.ts`). Within 24 hours of the customer's last message, text is sent. After that only an approved template: confirmations and reminders use one if configured; replies don't have one, so the owner is told to reply in WhatsApp. Nothing is marked sent that wasn't.
+- **Reliability.** A message WhatsApp accepted is never sent again. Temporary failures (rate limits, WhatsApp unavailable, a connection that never opened) are retried with backoff, at most five attempts. Refusals aren't retried. A send that stopped mid-way can't be checked with WhatsApp, so it's reported to the owner rather than repeated. Refused credentials put the connection in "needs attention" in Settings.
+- **Statuses** only move forward (accepted, sent, delivered, read), however late or often they arrive; a failure never overrides delivered or read.
+- **Usage.** One ledger row per message WhatsApp accepts (`provider: meta`, `send_text` or `send_template`, destination country), updated with WhatsApp's own billable flag and pricing category when statuses arrive. No cost is estimated: there's no maintained rate card, and inbound messages aren't charged by Meta.
+- **Read receipts** aren't sent: on a number shared with the WhatsApp Business app they would clear the owner's unread badges.
+
+### The worker
+
+`runWhatsAppWork` (`src/features/whatsapp/worker.ts`) processes stored events, turns due reminders into messages and sends what's queued. Every step claims its work in the database, so any number can run at once. It runs:
+
+- after each webhook and each owner approval or reply, once the response has gone (Next.js `after`);
+- on a schedule: call `GET /api/internal/whatsapp/work` with `Authorization: Bearer $WHATSAPP_WORKER_SECRET` every minute or so (for example a cron job). This is the guarantee; the other two are the fast path;
+- by hand: `pnpm whatsapp work` (add `--loop` to keep going).
+
+### Setting up a developer connection
+
+This is for building and testing with one number. It is not customer onboarding (see below).
+
+1. In the [Meta App Dashboard](https://developers.facebook.com/apps), create a Business app and add the WhatsApp product. API Setup gives a test business number (or add your own), its phone number ID and the WhatsApp Business account ID. Add your own phone as a test recipient.
+2. Create a system user access token with `whatsapp_business_messaging` and `whatsapp_business_management` (the temporary API Setup token lasts 24 hours). Put the IDs, the token, the App Secret (App settings → Basic), a verify token of your choosing and a worker secret in `.env.local`.
+3. Expose the app over HTTPS. Meta can't reach `localhost`, so use any tunnel (Cloudflare Tunnel, ngrok, …) or a deployed preview. Nothing in the app depends on the tunnel.
+4. In WhatsApp → Configuration, set the callback URL to `https://<your host>/api/webhooks/whatsapp` and the verify token, then subscribe to the `messages` field.
+5. Connect the number to your Pingflow account: `pnpm whatsapp connect you@example.com`. It checks the token with WhatsApp first. Settings then shows it as connected.
+6. To be recognised as a customer, add your phone as a customer's number (or send from a number you've added), then message the business number. Messages from other numbers are treated as unknown.
+7. For reminders and confirmations after 24 hours, create utility templates in WhatsApp Manager, register them (`pnpm whatsapp template you@example.com appointment_reminder <name> en_GB customer_first_name,when`) and check their review status (`pnpm whatsapp templates-sync you@example.com`). Only approved templates are sent. The fields a template can use are in `src/domain/channel/templates.ts`.
+
+Without a tunnel, `pnpm whatsapp simulate you@example.com "When's my next lesson?"` posts a correctly signed, Meta-shaped webhook to your local app. In development, `/app/dev/whatsapp` shows the connection's IDs, recent events, the outbox and templates (never tokens), and can run the worker.
+
+### Customers' own numbers
+
+The product promise is that a business keeps its existing WhatsApp Business number. Meta supports that ("coexistence": the WhatsApp Business app and the Cloud API on one number), but only through Embedded Signup run by a Meta Tech Provider with App Review approval. Pingflow doesn't have that yet, so:
+
+- the connection model, states and Settings are built for it (`whatsapp_connections.mode = 'embedded_signup'`);
+- the Embedded Signup flow, the token exchange and encrypted per-business token storage are not built. Credentials come through `WhatsAppCredentialProvider` (`src/lib/whatsapp/credentials.ts`); today its only source is the developer connection's environment. Customers' tokens will need server-only encrypted storage (for example Supabase Vault) behind the same interface;
+- onboarding still offers "Skip for now", and Settings says connecting isn't available yet.
+
 ## Usage ledger
 
-`usage_events` is an internal record of what each business costs Pingflow: model calls (tokens, model, request ID), WhatsApp messages (category, destination, billable) and emails, with an estimated cost in millionths of a currency unit. The message pipeline records its model calls; WhatsApp and email will record theirs once connected.
+`usage_events` is an internal record of what each business costs Pingflow: model calls (tokens, model, request ID), WhatsApp messages (category, destination, billable) and emails, with an estimated cost in millionths of a currency unit. The message pipeline records its model calls and the WhatsApp channel its sends; email will once it exists.
 
 - Record through `src/lib/usage/record.ts` (`recordAiUsage`, `recordMessagingUsage`), or `writeUsage` with the server's client, server-side only. It uses the secret key, so `SUPABASE_SECRET_KEY` must be set on the server.
 - A provider event reported twice (same provider, operation and reference) is stored once.
@@ -126,13 +179,16 @@ pnpm build
 pnpm test:e2e           # needs the local stack; starts the app on :3100 if it isn't running
 ```
 
-The end-to-end tests run Sarah's reschedule and the owner's answers to processed messages in Chromium and WebKit. The database tests (`e2e/database/`) check row level security, the message pipeline (flows, repeated deliveries, retries, ordering, privacy, usage), the customer-and-booking and services transactions, the booking guard, schedule modes and the usage ledger directly against the local database. None of them call OpenAI. Install the browsers once with `pnpm exec playwright install chromium webkit`.
+The end-to-end tests run Sarah's reschedule, the owner's answers to processed messages and the WhatsApp Settings and Attention states in Chromium and WebKit. The database tests (`e2e/database/`) check row level security, the message pipeline (flows, repeated deliveries, retries, ordering, privacy, usage), the WhatsApp channel (signed webhooks through to sends and statuses, the 24-hour window, templates, reminders, retries, crash recovery, isolation), the customer-and-booking and services transactions, the booking guard, schedule modes and the usage ledger directly against the local database. None of them call OpenAI or Meta. Install the browsers once with `pnpm exec playwright install chromium webkit`.
 
 ## Code layout
 
 - `src/domain/`: plain TypeScript rules with no I/O. The availability engine, time zones and formatting, the message policy (`messages/`: interpretation schema, dates, identity, replies, decisions), request planning, message templates, reminder policy, onboarding checks, what each line of work starts with (`onboarding/business-types.ts`), usage events and activity wording.
 - `src/lib/ai/`: the interpreters, their configuration, the prompt and model prices. Server-side only.
 - `src/features/messages/`: the inbound message pipeline and the development simulator.
+- `src/domain/channel/`: channel rules with no provider in them: the 24-hour window, the send policy, template fields, delivery wording.
+- `src/lib/whatsapp/`, `src/lib/messaging/`: the WhatsApp Cloud API (transport, webhook parsing and signatures, errors, credentials). Server-side only.
+- `src/features/whatsapp/`: the webhook ingestion, the worker and dispatcher, and Settings.
 - `src/features/<area>/`: data loading (`data.ts`), server actions (`actions.ts`) and the components for each app area.
 - `src/lib/supabase/`: separate browser and server clients, plus the session refresh used by `src/proxy.ts`.
 - `src/app/(marketing)/`: the public site. `src/app/(auth)/`: sign-in and onboarding. `src/app/app/`: the signed-in app.

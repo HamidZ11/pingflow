@@ -474,6 +474,87 @@ export type Database = {
           },
         ];
       };
+      message_deliveries: {
+        Row: {
+          accepted_at: string | null;
+          attempts: number;
+          business_id: string;
+          claimed_at: string | null;
+          connection_id: string;
+          created_at: string;
+          delivered_at: string | null;
+          dispatch: Database["public"]["Enums"]["dispatch_state"];
+          error_category: string | null;
+          error_code: number | null;
+          failed_at: string | null;
+          message_id: string;
+          next_attempt_at: string;
+          provider_message_id: string | null;
+          read_at: string | null;
+          sent_at: string | null;
+          sent_via: string | null;
+          template_name: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          accepted_at?: string | null;
+          attempts?: number;
+          business_id: string;
+          claimed_at?: string | null;
+          connection_id: string;
+          created_at?: string;
+          delivered_at?: string | null;
+          dispatch?: Database["public"]["Enums"]["dispatch_state"];
+          error_category?: string | null;
+          error_code?: number | null;
+          failed_at?: string | null;
+          message_id: string;
+          next_attempt_at?: string;
+          provider_message_id?: string | null;
+          read_at?: string | null;
+          sent_at?: string | null;
+          sent_via?: string | null;
+          template_name?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          accepted_at?: string | null;
+          attempts?: number;
+          business_id?: string;
+          claimed_at?: string | null;
+          connection_id?: string;
+          created_at?: string;
+          delivered_at?: string | null;
+          dispatch?: Database["public"]["Enums"]["dispatch_state"];
+          error_category?: string | null;
+          error_code?: number | null;
+          failed_at?: string | null;
+          message_id?: string;
+          next_attempt_at?: string;
+          provider_message_id?: string | null;
+          read_at?: string | null;
+          sent_at?: string | null;
+          sent_via?: string | null;
+          template_name?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "message_deliveries_business_id_connection_id_fkey";
+            columns: ["business_id", "connection_id"];
+            isOneToOne: false;
+            referencedRelation: "whatsapp_connections";
+            referencedColumns: ["business_id", "id"];
+          },
+          {
+            foreignKeyName: "message_deliveries_business_id_message_id_fkey";
+            columns: ["business_id", "message_id"];
+            isOneToOne: false;
+            referencedRelation: "messages";
+            referencedColumns: ["business_id", "id"];
+          },
+        ];
+      };
       message_processing_runs: {
         Row: {
           attempts: number;
@@ -561,6 +642,7 @@ export type Database = {
           author: Database["public"]["Enums"]["message_author"];
           body: string;
           business_id: string;
+          content_type: string;
           conversation_id: string;
           delivery: Database["public"]["Enums"]["message_delivery"];
           direction: Database["public"]["Enums"]["message_direction"];
@@ -574,6 +656,7 @@ export type Database = {
           author: Database["public"]["Enums"]["message_author"];
           body: string;
           business_id: string;
+          content_type?: string;
           conversation_id: string;
           delivery: Database["public"]["Enums"]["message_delivery"];
           direction: Database["public"]["Enums"]["message_direction"];
@@ -587,6 +670,7 @@ export type Database = {
           author?: Database["public"]["Enums"]["message_author"];
           body?: string;
           business_id?: string;
+          content_type?: string;
           conversation_id?: string;
           delivery?: Database["public"]["Enums"]["message_delivery"];
           direction?: Database["public"]["Enums"]["message_direction"];
@@ -709,6 +793,7 @@ export type Database = {
           business_id: string;
           created_at: string;
           id: string;
+          message_id: string | null;
           send_at: string;
           sent_at: string | null;
           status: Database["public"]["Enums"]["reminder_status"];
@@ -719,6 +804,7 @@ export type Database = {
           business_id: string;
           created_at?: string;
           id?: string;
+          message_id?: string | null;
           send_at: string;
           sent_at?: string | null;
           status?: Database["public"]["Enums"]["reminder_status"];
@@ -729,6 +815,7 @@ export type Database = {
           business_id?: string;
           created_at?: string;
           id?: string;
+          message_id?: string | null;
           send_at?: string;
           sent_at?: string | null;
           status?: Database["public"]["Enums"]["reminder_status"];
@@ -740,6 +827,13 @@ export type Database = {
             columns: ["business_id", "booking_id"];
             isOneToOne: false;
             referencedRelation: "bookings";
+            referencedColumns: ["business_id", "id"];
+          },
+          {
+            foreignKeyName: "reminders_message_fkey";
+            columns: ["business_id", "message_id"];
+            isOneToOne: false;
+            referencedRelation: "messages";
             referencedColumns: ["business_id", "id"];
           },
         ];
@@ -897,6 +991,205 @@ export type Database = {
           },
         ];
       };
+      whatsapp_connections: {
+        Row: {
+          business_id: string;
+          connected_at: string | null;
+          created_at: string;
+          disconnected_at: string | null;
+          display_phone_number: string | null;
+          id: string;
+          last_error_at: string | null;
+          last_error_category: string | null;
+          last_inbound_at: string | null;
+          last_outbound_at: string | null;
+          last_webhook_at: string | null;
+          mode: Database["public"]["Enums"]["whatsapp_connection_mode"];
+          phone_number_id: string;
+          status: Database["public"]["Enums"]["whatsapp_connection_status"];
+          updated_at: string;
+          verified_name: string | null;
+          waba_id: string | null;
+        };
+        Insert: {
+          business_id: string;
+          connected_at?: string | null;
+          created_at?: string;
+          disconnected_at?: string | null;
+          display_phone_number?: string | null;
+          id?: string;
+          last_error_at?: string | null;
+          last_error_category?: string | null;
+          last_inbound_at?: string | null;
+          last_outbound_at?: string | null;
+          last_webhook_at?: string | null;
+          mode: Database["public"]["Enums"]["whatsapp_connection_mode"];
+          phone_number_id: string;
+          status?: Database["public"]["Enums"]["whatsapp_connection_status"];
+          updated_at?: string;
+          verified_name?: string | null;
+          waba_id?: string | null;
+        };
+        Update: {
+          business_id?: string;
+          connected_at?: string | null;
+          created_at?: string;
+          disconnected_at?: string | null;
+          display_phone_number?: string | null;
+          id?: string;
+          last_error_at?: string | null;
+          last_error_category?: string | null;
+          last_inbound_at?: string | null;
+          last_outbound_at?: string | null;
+          last_webhook_at?: string | null;
+          mode?: Database["public"]["Enums"]["whatsapp_connection_mode"];
+          phone_number_id?: string;
+          status?: Database["public"]["Enums"]["whatsapp_connection_status"];
+          updated_at?: string;
+          verified_name?: string | null;
+          waba_id?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_connections_business_id_fkey";
+            columns: ["business_id"];
+            isOneToOne: false;
+            referencedRelation: "businesses";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      whatsapp_events: {
+        Row: {
+          attempts: number;
+          business_id: string | null;
+          claimed_at: string | null;
+          connection_id: string | null;
+          error_category: string | null;
+          event_key: string;
+          id: string;
+          kind: Database["public"]["Enums"]["whatsapp_event_kind"];
+          message_id: string | null;
+          next_attempt_at: string | null;
+          occurred_at: string;
+          payload: NonNullable<Json>;
+          phone_number_id: string | null;
+          processed_at: string | null;
+          received_at: string;
+          sender: string | null;
+          status: Database["public"]["Enums"]["whatsapp_event_status"];
+          wa_message_id: string | null;
+        };
+        Insert: {
+          attempts?: number;
+          business_id?: string | null;
+          claimed_at?: string | null;
+          connection_id?: string | null;
+          error_category?: string | null;
+          event_key: string;
+          id?: string;
+          kind: Database["public"]["Enums"]["whatsapp_event_kind"];
+          message_id?: string | null;
+          next_attempt_at?: string | null;
+          occurred_at: string;
+          payload?: NonNullable<Json>;
+          phone_number_id?: string | null;
+          processed_at?: string | null;
+          received_at?: string;
+          sender?: string | null;
+          status?: Database["public"]["Enums"]["whatsapp_event_status"];
+          wa_message_id?: string | null;
+        };
+        Update: {
+          attempts?: number;
+          business_id?: string | null;
+          claimed_at?: string | null;
+          connection_id?: string | null;
+          error_category?: string | null;
+          event_key?: string;
+          id?: string;
+          kind?: Database["public"]["Enums"]["whatsapp_event_kind"];
+          message_id?: string | null;
+          next_attempt_at?: string | null;
+          occurred_at?: string;
+          payload?: NonNullable<Json>;
+          phone_number_id?: string | null;
+          processed_at?: string | null;
+          received_at?: string;
+          sender?: string | null;
+          status?: Database["public"]["Enums"]["whatsapp_event_status"];
+          wa_message_id?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_events_business_id_fkey";
+            columns: ["business_id"];
+            isOneToOne: false;
+            referencedRelation: "businesses";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "whatsapp_events_connection_id_fkey";
+            columns: ["connection_id"];
+            isOneToOne: false;
+            referencedRelation: "whatsapp_connections";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      whatsapp_templates: {
+        Row: {
+          business_id: string;
+          connection_id: string;
+          created_at: string;
+          id: string;
+          language: string;
+          last_error_code: number | null;
+          name: string;
+          parameters: string[];
+          provider_status: string;
+          purpose: Database["public"]["Enums"]["template_purpose"];
+          status_checked_at: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          business_id: string;
+          connection_id: string;
+          created_at?: string;
+          id?: string;
+          language: string;
+          last_error_code?: number | null;
+          name: string;
+          parameters?: string[];
+          provider_status?: string;
+          purpose: Database["public"]["Enums"]["template_purpose"];
+          status_checked_at?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          business_id?: string;
+          connection_id?: string;
+          created_at?: string;
+          id?: string;
+          language?: string;
+          last_error_code?: number | null;
+          name?: string;
+          parameters?: string[];
+          provider_status?: string;
+          purpose?: Database["public"]["Enums"]["template_purpose"];
+          status_checked_at?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_templates_business_id_connection_id_fkey";
+            columns: ["business_id", "connection_id"];
+            isOneToOne: false;
+            referencedRelation: "whatsapp_connections";
+            referencedColumns: ["business_id", "id"];
+          },
+        ];
+      };
       working_hours: {
         Row: {
           business_id: string;
@@ -938,8 +1231,51 @@ export type Database = {
         Args: { p_ends_at: string; p_label?: string; p_starts_at: string };
         Returns: string;
       };
+      apply_whatsapp_status: {
+        Args: {
+          p_at: string;
+          p_connection_id: string;
+          p_error_code?: number;
+          p_provider_message_id: string;
+          p_status: string;
+        };
+        Returns: Json;
+      };
       cancel_booking: { Args: { p_booking_id: string }; Returns: undefined };
       claim_message_run: { Args: { p_run_id: string }; Returns: number };
+      claim_outbound_delivery: {
+        Args: Record<PropertyKey, never>;
+        Returns: Json;
+      };
+      claim_whatsapp_event: {
+        Args: { p_lease_seconds?: number };
+        Returns: {
+          attempts: number;
+          business_id: string | null;
+          claimed_at: string | null;
+          connection_id: string | null;
+          error_category: string | null;
+          event_key: string;
+          id: string;
+          kind: Database["public"]["Enums"]["whatsapp_event_kind"];
+          message_id: string | null;
+          next_attempt_at: string | null;
+          occurred_at: string;
+          payload: NonNullable<Json>;
+          phone_number_id: string | null;
+          processed_at: string | null;
+          received_at: string;
+          sender: string | null;
+          status: Database["public"]["Enums"]["whatsapp_event_status"];
+          wa_message_id: string | null;
+        }[];
+        SetofOptions: {
+          from: "*";
+          to: "whatsapp_events";
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
+      };
       complete_message_run: {
         Args: { p_attempt: number; p_result: Json; p_run_id: string };
         Returns: Json;
@@ -975,6 +1311,10 @@ export type Database = {
         };
         Returns: Json;
       };
+      disconnect_whatsapp: {
+        Args: Record<PropertyKey, never>;
+        Returns: undefined;
+      };
       dismiss_pending_action: {
         Args: { p_action_id: string };
         Returns: undefined;
@@ -990,10 +1330,22 @@ export type Database = {
         };
         Returns: Json;
       };
+      finish_whatsapp_event: {
+        Args: {
+          p_attempt: number;
+          p_error_category?: string;
+          p_event_id: string;
+          p_message_id?: string;
+          p_retry_at?: string;
+          p_status: Database["public"]["Enums"]["whatsapp_event_status"];
+        };
+        Returns: boolean;
+      };
       ingest_inbound_message: {
         Args: {
           p_body: string;
           p_business_id: string;
+          p_content_type?: string;
           p_external_id: string;
           p_phone_e164: string;
           p_received_at: string;
@@ -1008,6 +1360,22 @@ export type Database = {
           p_starts_at: string;
         };
         Returns: undefined;
+      };
+      note_message_not_sent: {
+        Args: { p_message_id: string; p_outcome: string; p_reason: string };
+        Returns: undefined;
+      };
+      queue_reminder: {
+        Args: { p_body: string; p_reminder_id: string };
+        Returns: string;
+      };
+      record_delivery_result: {
+        Args: { p_attempt: number; p_message_id: string; p_result: Json };
+        Returns: boolean;
+      };
+      recover_stale_deliveries: {
+        Args: { p_lease_seconds?: number };
+        Returns: number;
       };
       remove_schedule_block: {
         Args: { p_block_id: string };
@@ -1081,7 +1449,10 @@ export type Database = {
         | "block_removed"
         | "customer_added"
         | "automation_resumed"
-        | "reply_needed";
+        | "reply_needed"
+        | "message_not_sent"
+        | "reminder_sent"
+        | "reminder_not_sent";
       booking_status: "confirmed" | "cancelled";
       business_type:
         | "driving_instructor"
@@ -1094,8 +1465,18 @@ export type Database = {
         | "other";
       contact_relationship:
         "self" | "parent" | "guardian" | "partner" | "other";
+      dispatch_state: "queued" | "sending" | "done";
       message_author: "contact" | "pingflow" | "owner";
-      message_delivery: "received" | "simulated" | "sent" | "failed";
+      message_delivery:
+        | "received"
+        | "simulated"
+        | "sent"
+        | "failed"
+        | "queued"
+        | "accepted"
+        | "delivered"
+        | "read"
+        | "blocked";
       message_direction: "inbound" | "outbound";
       message_source: "whatsapp" | "simulator";
       pending_action_kind:
@@ -1107,9 +1488,20 @@ export type Database = {
       pending_action_status:
         "open" | "approved" | "declined" | "taken_over" | "dismissed";
       processing_status: "pending" | "processing" | "completed" | "failed";
-      reminder_status: "scheduled" | "sent" | "cancelled" | "failed";
+      reminder_status:
+        "scheduled" | "sent" | "cancelled" | "failed" | "not_sent";
       schedule_mode: "regular" | "flexible";
+      template_purpose:
+        | "booking_confirmation"
+        | "cancellation_confirmation"
+        | "appointment_reminder";
       usage_category: "ai" | "whatsapp" | "email" | "other";
+      whatsapp_connection_mode: "developer" | "embedded_signup";
+      whatsapp_connection_status:
+        "connecting" | "connected" | "needs_attention" | "disconnected";
+      whatsapp_event_kind: "message" | "status" | "other";
+      whatsapp_event_status:
+        "pending" | "processing" | "done" | "ignored" | "unroutable" | "failed";
     };
     CompositeTypes: {
       [_ in never]: never;
@@ -1263,6 +1655,9 @@ export const Constants = {
         "customer_added",
         "automation_resumed",
         "reply_needed",
+        "message_not_sent",
+        "reminder_sent",
+        "reminder_not_sent",
       ],
       booking_status: ["confirmed", "cancelled"],
       business_type: [
@@ -1276,8 +1671,19 @@ export const Constants = {
         "other",
       ],
       contact_relationship: ["self", "parent", "guardian", "partner", "other"],
+      dispatch_state: ["queued", "sending", "done"],
       message_author: ["contact", "pingflow", "owner"],
-      message_delivery: ["received", "simulated", "sent", "failed"],
+      message_delivery: [
+        "received",
+        "simulated",
+        "sent",
+        "failed",
+        "queued",
+        "accepted",
+        "delivered",
+        "read",
+        "blocked",
+      ],
       message_direction: ["inbound", "outbound"],
       message_source: ["whatsapp", "simulator"],
       pending_action_kind: [
@@ -1295,9 +1701,30 @@ export const Constants = {
         "dismissed",
       ],
       processing_status: ["pending", "processing", "completed", "failed"],
-      reminder_status: ["scheduled", "sent", "cancelled", "failed"],
+      reminder_status: ["scheduled", "sent", "cancelled", "failed", "not_sent"],
       schedule_mode: ["regular", "flexible"],
+      template_purpose: [
+        "booking_confirmation",
+        "cancellation_confirmation",
+        "appointment_reminder",
+      ],
       usage_category: ["ai", "whatsapp", "email", "other"],
+      whatsapp_connection_mode: ["developer", "embedded_signup"],
+      whatsapp_connection_status: [
+        "connecting",
+        "connected",
+        "needs_attention",
+        "disconnected",
+      ],
+      whatsapp_event_kind: ["message", "status", "other"],
+      whatsapp_event_status: [
+        "pending",
+        "processing",
+        "done",
+        "ignored",
+        "unroutable",
+        "failed",
+      ],
     },
   },
 } as const;

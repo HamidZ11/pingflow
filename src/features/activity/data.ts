@@ -4,6 +4,7 @@ import {
   type ActivityKind,
   describeActivity,
 } from "@/domain/activity/describe";
+import type { ContentType } from "@/domain/channel/inbound";
 import { formatPhone } from "@/domain/contacts/phone";
 import {
   formatDate,
@@ -21,6 +22,7 @@ export type ActivityEntry = {
   text: string;
   quote: string | null;
   simulated: boolean;
+  delivery: string | null;
   customerId: string | null;
 };
 
@@ -55,7 +57,7 @@ export async function loadActivity(
        customer:customers ( full_name ),
        booking:bookings ( service:services ( name ) ),
        message:messages (
-         body,
+         body, delivery, content_type,
          conversation:conversations ( contact:contacts ( display_name, phone_e164 ) )
        ),
        action:pending_actions (
@@ -87,6 +89,9 @@ export async function loadActivity(
         ),
         serviceName: e.booking?.service?.name ?? null,
         messageBody: e.message?.body ?? null,
+        messageDelivery: e.message?.delivery ?? null,
+        messageContentType: (e.message?.content_type ??
+          null) as ContentType | null,
       },
       tz,
     );
@@ -100,6 +105,7 @@ export async function loadActivity(
       text: line.text,
       quote: line.quote,
       simulated: line.simulated,
+      delivery: line.delivery,
       customerId: e.customer_id,
     });
     days.set(date, list);

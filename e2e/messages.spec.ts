@@ -232,7 +232,7 @@ test("the message simulator doesn't exist outside development", async ({
   await expect(page.locator("body")).not.toContainText("Message simulator");
 });
 
-test("nothing about the model or its key reaches the browser", async ({
+test("nothing about the model, WhatsApp credentials or their keys reaches the browser", async ({
   page,
   baseURL,
 }, testInfo) => {
@@ -252,7 +252,7 @@ test("nothing about the model or its key reaches the browser", async ({
   for (const file of files) {
     const text = readFileSync(file, "utf8");
     expect(text, file).not.toMatch(
-      /OPENAI_API_KEY|api\.openai\.com|SUPABASE_SECRET_KEY|message_interpreter_v1/,
+      /OPENAI_API_KEY|api\.openai\.com|SUPABASE_SECRET_KEY|message_interpreter_v1|WHATSAPP_ACCESS_TOKEN|META_APP_SECRET|WHATSAPP_VERIFY_TOKEN|WHATSAPP_WORKER_SECRET|graph\.facebook\.com/,
     );
   }
 
@@ -264,5 +264,7 @@ test("nothing about the model or its key reaches the browser", async ({
     page.getByRole("heading", { level: 1, name: "Attention" }),
   ).toBeVisible();
   const html = await page.content();
-  expect(html).not.toMatch(/OPENAI|openai|sk-[A-Za-z0-9]{8}/);
+  expect(html).not.toMatch(
+    /OPENAI|openai|sk-[A-Za-z0-9]{8}|WHATSAPP_|META_APP|graph\.facebook|phone_number_id|waba_id/,
+  );
 });

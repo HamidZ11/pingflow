@@ -198,6 +198,14 @@ The product should not require customers to:
 - learn commands;
 - change phone numbers.
 
+## Connecting an existing number (Meta's rules, checked September 2026)
+
+- Keeping the existing number and the WhatsApp Business app is Meta's "coexistence" onboarding: the owner keeps using the app (version 2.24.17 or later) while Pingflow uses the Cloud API on the same number. Up to six months of chats and the contacts sync.
+- It needs Pingflow to be a Meta Tech Provider using Embedded Signup, with App Review for WhatsApp messaging and management. Until then only a developer number can be connected.
+- On a coexistence number WhatsApp turns off group sync, broadcast lists, disappearing and view-once messages and live location, and unlinks the Windows and Wear OS apps. Messages the owner sends from the app stay free; Pingflow's are charged at Meta's rates.
+- More than 24 hours after a customer's last message, WhatsApp only allows approved templates. Reminders and late confirmations need one; without it Pingflow says it couldn't send.
+- Copy must not promise one-click setup or that nothing changes in the app.
+
 ## Owner-facing WhatsApp
 
 The owner can also interact with Pingflow conversationally.
