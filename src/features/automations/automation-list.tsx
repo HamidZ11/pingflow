@@ -33,7 +33,7 @@ const presets: { key: AutomationKey; title: string; description: string }[] = [
     key: "availability",
     title: "Availability replies",
     description:
-      "Answers “When are you free?” with free times from your schedule. It never books without you.",
+      "Answers “When are you free?” from customers Pingflow recognises, with free times from your schedule. It never books without you.",
   },
   {
     key: "bookingTime",

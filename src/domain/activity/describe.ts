@@ -1,4 +1,5 @@
 import { serviceNoun } from "@/domain/messages/templates";
+import { readBookingUnderstanding } from "@/domain/requests/booking";
 import {
   describeRequestedTime,
   readRescheduleUnderstanding,
@@ -34,7 +35,8 @@ export type ActivityKind =
   | "time_blocked"
   | "block_removed"
   | "customer_added"
-  | "automation_resumed";
+  | "automation_resumed"
+  | "reply_needed";
 
 export type ActivityActor = "contact" | "pingflow" | "owner";
 
@@ -45,6 +47,8 @@ export type ActivityRecord = {
   occurredAt: Date;
   details: Record<string, unknown>;
   customerName: string | null;
+  /** The contact's name or number, when no one customer is linked. */
+  contactName?: string | null;
   serviceName: string | null;
   messageBody: string | null;
 };
@@ -67,15 +71,39 @@ function possessive(name: string) {
   return name.endsWith("s") ? `${name}’` : `${name}’s`;
 }
 
+/** Why a message was left for the owner to answer. */
+function replyNeeded(reason: unknown, who: string): string {
+  switch (reason) {
+    case "clarification_exhausted":
+      return `Pingflow wasn’t sure what ${who} meant and left it for you`;
+    case "interpreter_unavailable":
+      return `Pingflow couldn’t understand ${possessive(who)} message and left it for you`;
+    case "identity_unknown":
+      return `Pingflow doesn’t know this number, so it left the message for you`;
+    case "not_linked":
+      return `${who} asked about someone this number isn’t linked to. Pingflow shared nothing and left it for you`;
+    case "new_contact":
+      return `A new contact asked to book. Pingflow left it for you`;
+    case "automation_off":
+      return `Automatic replies are off, so Pingflow left ${possessive(who)} message for you`;
+    case "business_question":
+      return `${who} asked a question. It’s waiting for your reply`;
+    case "no_booking_found":
+      return `Pingflow couldn’t find the booking ${who} meant and left it for you`;
+    default:
+      return `${possessive(who)} message is waiting for your reply`;
+  }
+}
+
 export function describeActivity(
   event: ActivityRecord,
   timeZone: string,
 ): ActivityLine {
   const d = event.details;
-  const who = event.customerName ?? "A customer";
-  const whose = event.customerName
-    ? possessive(event.customerName)
-    : "A customer’s";
+  const named = event.customerName ?? event.contactName ?? null;
+  const who = named ?? "A customer";
+  const whose = named ? possessive(named) : "A customer’s";
+  const occurredOn = dateKeyOf(event.occurredAt, timeZone);
   const service = event.serviceName
     ? serviceNoun(event.serviceName)
     : "booking";
@@ -84,6 +112,38 @@ export function describeActivity(
     return value ? formatDateTime(value, timeZone) : "an earlier time";
   };
   const simulated = d.delivery === "simulated";
+
+  // What a request_understood entry records, by what was asked.
+  const understood = (details: Record<string, unknown>): string => {
+    const reschedule = readRescheduleUnderstanding(details);
+    if (reschedule) {
+      const from = instant(details.booking_starts_at);
+      const wants = describeRequestedTime(reschedule, occurredOn);
+      return from
+        ? `move ${possessive(who.split(" ")[0])} ${service} from ${formatDateTime(from, timeZone)} to ${wants}`
+        : `${who} wants to move their ${service} to ${wants}`;
+    }
+    const booking = readBookingUnderstanding(details);
+    if (booking) {
+      return `${who} wants to book a ${serviceNoun(booking.serviceName || "booking")} for ${describeRequestedTime(booking, occurredOn, { inSentence: true })}`;
+    }
+    switch (details.intent) {
+      case "cancellation": {
+        const starts = instant(details.booking_starts_at);
+        return starts
+          ? `${who} wants to cancel the ${service} on ${formatDateTime(starts, timeZone)}`
+          : `${who} wants to cancel a booking`;
+      }
+      case "next_booking_query":
+        return `${who} asked when their next booking is`;
+      case "availability_query":
+        return typeof details.date === "string"
+          ? `${who} asked what’s free on ${formatDate(details.date)}`
+          : `${who} asked what’s free`;
+      default:
+        return `${possessive(who)} message`;
+    }
+  };
   const line = (text: string, quote: string | null = null): ActivityLine => ({
     text,
     quote,
@@ -92,22 +152,9 @@ export function describeActivity(
 
   switch (event.kind) {
     case "message_received":
-      return line(`${who} sent a message`, event.messageBody);
-    case "request_understood": {
-      const understanding = readRescheduleUnderstanding(d);
-      const from = instant(d.booking_starts_at);
-      const wants = understanding
-        ? describeRequestedTime(
-            understanding,
-            dateKeyOf(event.occurredAt, timeZone),
-          )
-        : "another time";
-      return line(
-        from
-          ? `Pingflow understood: move ${possessive(who.split(" ")[0])} ${service} from ${formatDateTime(from, timeZone)} to ${wants}`
-          : `Pingflow understood: ${who} wants to move their ${service}`,
-      );
-    }
+      return line(`${named ?? "Someone"} sent a message`, event.messageBody);
+    case "request_understood":
+      return line(`Pingflow understood: ${understood(d)}`);
     case "time_proposed": {
       const starts = instant(d.starts_at);
       return line(
@@ -117,8 +164,17 @@ export function describeActivity(
       );
     }
     case "approval_requested":
-      return line("Pingflow asked you to approve the change");
+      return line(
+        d.request_kind === "booking_request"
+          ? "Pingflow asked you to approve the booking"
+          : d.request_kind === "cancellation_request"
+            ? "Pingflow asked you to approve the cancellation"
+            : "Pingflow asked you to approve the change",
+      );
     case "owner_approved": {
+      if (d.request_kind === "cancellation_request") {
+        return line("You approved the cancellation");
+      }
       const chosen = instant(d.starts_at);
       const proposed = instant(d.proposed_starts_at);
       const other =
@@ -138,6 +194,9 @@ export function describeActivity(
     case "request_closed":
       if (d.reason === "handled_by_owner") {
         return line(`You marked ${possessive(who)} message as handled`);
+      }
+      if (d.reason === "superseded") {
+        return line(`${whose} earlier request was replaced by a newer one`);
       }
       return line(
         `${whose} request was closed because you ${d.reason === "booking_cancelled" ? "cancelled" : "moved"} the booking`,
@@ -165,10 +224,24 @@ export function describeActivity(
         event.messageBody,
       );
     case "reply_sent":
+      if (event.actor === "owner") {
+        return line(
+          simulated ? `Your reply to ${who}` : `You replied to ${who}`,
+          event.messageBody,
+        );
+      }
+      if (d.reply_kind === "clarification") {
+        return line(
+          simulated ? `Question to ${who}` : `Question sent to ${who}`,
+          event.messageBody,
+        );
+      }
       return line(
         simulated ? `Reply to ${who}` : `Reply sent to ${who}`,
         event.messageBody,
       );
+    case "reply_needed":
+      return line(replyNeeded(d.reason, named ?? "someone"));
     case "reminder_scheduled":
       return line(`Reminder set for ${at("send_at")}`);
     case "reminder_rescheduled":

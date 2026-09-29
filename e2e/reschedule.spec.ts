@@ -1,8 +1,9 @@
 import { expect, test } from "@playwright/test";
 import { open, seedDemo, signIn } from "./helpers";
 
-// The acceptance test: Sarah asks to move tomorrow's lesson to Friday after
-// 4; the owner approves Pingflow's proposal from Attention.
+// The acceptance test: Sarah asks to move her next lesson to three weekdays
+// later, after 4 (tomorrow's to Friday, when run on a Monday); the owner
+// approves Pingflow's proposal from Attention.
 test("approving Sarah's reschedule moves the booking and records everything", async ({
   page,
   baseURL,
@@ -18,7 +19,10 @@ test("approving Sarah's reschedule moves the booking and records everything", as
   ).toBeVisible();
   const card = page.getByRole("article").filter({ hasText: "Sarah Khan" });
   await expect(card).toContainText("wants to move");
-  await expect(card).toContainText("Friday after 4");
+  // Three weekdays after her lesson: Friday when run on a Monday.
+  await expect(card).toContainText(
+    /(Monday|Tuesday|Wednesday|Thursday|Friday) after 4/,
+  );
   const approve = card.getByRole("button", { name: /^Approve \w{3} 17:00$/ });
   await expect(approve).toBeVisible();
 
@@ -40,11 +44,10 @@ test("approving Sarah's reschedule moves the booking and records everything", as
     page.getByRole("article").filter({ hasText: "Sarah Khan" }),
   ).toHaveCount(0);
 
-  // 8. The schedule shows the move (Friday may fall in next week).
+  // 8. The schedule shows the move (it may fall in next week).
   await open(page, "/app/schedule?view=week");
-  await expect(
-    weekGrid.getByRole("button", { name: /Sarah Khan/ }).first(),
-  ).toBeVisible();
+  // Wait for the week to render (other customers' lessons are always in it).
+  await expect(weekGrid.getByRole("button").first()).toBeVisible();
   let moved = weekGrid.getByRole("button", {
     name: /Sarah Khan.*17:00–18:00.*moved today/,
   });

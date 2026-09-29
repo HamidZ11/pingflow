@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Overlay } from "@/components/app/overlay";
 import { Bubble } from "@/components/reschedule-demo/chat";
-import type { DayEntry, RescheduleItem } from "@/features/attention/data";
+import type { DayEntry, TimedRequestItem } from "@/features/attention/data";
 import { cx } from "@/lib/cx";
 
 function Section({
@@ -38,7 +38,7 @@ export function ContextSheet({
   open,
   onClose,
 }: {
-  item: RescheduleItem;
+  item: TimedRequestItem;
   open: boolean;
   onClose: () => void;
 }) {
@@ -88,41 +88,71 @@ export function ContextSheet({
           </Section>
         )}
 
-        <Section title="Current booking">
-          <p>
-            {item.service.name} · {item.current.day}, {item.current.time}
-          </p>
-          <p className="text-ink-3">
-            {[item.service.length, item.service.buffer, item.series]
-              .filter(Boolean)
-              .join(" · ")}
-          </p>
-        </Section>
+        {item.type === "reschedule" ? (
+          <>
+            <Section title="Current booking">
+              <p>
+                {item.service.name} · {item.current.day}, {item.current.time}
+              </p>
+              <p className="text-ink-3">
+                {[item.service.length, item.service.buffer, item.series]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </p>
+            </Section>
 
-        <Section title="Requested change">
-          <p>Move to {item.requested.long}</p>
-        </Section>
+            <Section title="Requested change">
+              <p>Move to {item.requested.long}</p>
+            </Section>
 
-        <Section title="What Pingflow understood">
-          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
-            <dt className="text-ink-3">Request</dt>
-            <dd>Move one booking</dd>
-            <dt className="text-ink-3">Customer</dt>
-            <dd>{item.customer.name}, recognised by their number</dd>
-            <dt className="text-ink-3">Booking</dt>
-            <dd>
-              Found: {item.current.day}, {item.current.time}
-            </dd>
-            <dt className="text-ink-3">Wants</dt>
-            <dd>{item.requested.short}</dd>
-            {item.series && (
-              <>
-                <dt className="text-ink-3">Series</dt>
-                <dd>Only this week’s booking moves</dd>
-              </>
-            )}
-          </dl>
-        </Section>
+            <Section title="What Pingflow understood">
+              <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
+                <dt className="text-ink-3">Request</dt>
+                <dd>Move one booking</dd>
+                <dt className="text-ink-3">Customer</dt>
+                <dd>{item.customer.name}, recognised by their number</dd>
+                <dt className="text-ink-3">Booking</dt>
+                <dd>
+                  Found: {item.current.day}, {item.current.time}
+                </dd>
+                <dt className="text-ink-3">Wants</dt>
+                <dd>{item.requested.short}</dd>
+                {item.series && (
+                  <>
+                    <dt className="text-ink-3">Series</dt>
+                    <dd>Only this week’s booking moves</dd>
+                  </>
+                )}
+              </dl>
+            </Section>
+          </>
+        ) : (
+          <>
+            <Section title="Requested booking">
+              <p>
+                {item.service.name} · {item.requested.long}
+              </p>
+              <p className="text-ink-3">
+                {[item.service.length, item.service.buffer]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </p>
+            </Section>
+
+            <Section title="What Pingflow understood">
+              <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
+                <dt className="text-ink-3">Request</dt>
+                <dd>A new booking</dd>
+                <dt className="text-ink-3">Customer</dt>
+                <dd>{item.customer.name}, recognised by their number</dd>
+                <dt className="text-ink-3">Service</dt>
+                <dd>{item.service.name}</dd>
+                <dt className="text-ink-3">Wants</dt>
+                <dd>{item.requested.short}</dd>
+              </dl>
+            </Section>
+          </>
+        )}
 
         <Section title="Proposed time">
           {item.proposal ? (

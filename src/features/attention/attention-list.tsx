@@ -2,7 +2,11 @@ import { Check } from "lucide-react";
 import Link from "next/link";
 import type { AttentionItem } from "@/features/attention/data";
 import { NoteCard } from "@/features/attention/note-card";
-import { RescheduleCard } from "@/features/attention/reschedule-card";
+import { ReplyCard } from "@/features/attention/reply-card";
+import {
+  CancellationCard,
+  TimedRequestCard,
+} from "@/features/attention/request-card";
 import { cx } from "@/lib/cx";
 
 const categories = [
@@ -16,7 +20,30 @@ const categories = [
 ] as const;
 
 function categoryOf(item: AttentionItem) {
-  return item.type === "reschedule" ? "approval" : item.category;
+  switch (item.type) {
+    case "reschedule":
+    case "booking":
+    case "cancellation":
+      return "approval";
+    case "reply":
+      return "reply";
+    case "note":
+      return item.category;
+  }
+}
+
+function Card({ item }: { item: AttentionItem }) {
+  switch (item.type) {
+    case "reschedule":
+    case "booking":
+      return <TimedRequestCard item={item} />;
+    case "cancellation":
+      return <CancellationCard item={item} />;
+    case "reply":
+      return <ReplyCard item={item} />;
+    case "note":
+      return <NoteCard item={item} />;
+  }
 }
 
 // Grouped by what the owner has to do. Empty groups are left out; with
@@ -74,11 +101,7 @@ export function AttentionList({ items }: { items: AttentionItem[] }) {
             <ul className="mt-3 space-y-4">
               {group.map((item) => (
                 <li key={item.id}>
-                  {item.type === "reschedule" ? (
-                    <RescheduleCard item={item} />
-                  ) : (
-                    <NoteCard item={item} />
-                  )}
+                  <Card item={item} />
                 </li>
               ))}
             </ul>

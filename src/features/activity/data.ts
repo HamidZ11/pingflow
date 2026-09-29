@@ -4,6 +4,7 @@ import {
   type ActivityKind,
   describeActivity,
 } from "@/domain/activity/describe";
+import { formatPhone } from "@/domain/contacts/phone";
 import {
   formatDate,
   formatRelativeDate,
@@ -31,6 +32,14 @@ export type ActivityDay = {
 
 export const ACTIVITY_DAYS = 30;
 
+/** "Dana Marsh", or "+44 7700 900111" for a number with no name. */
+function contactName(
+  contact: { display_name: string | null; phone_e164: string } | null,
+) {
+  if (!contact) return null;
+  return contact.display_name ?? formatPhone(contact.phone_e164);
+}
+
 // The audit trail: the last 30 days, newest day first, and within a day in
 // the order things happened so a request reads as a story.
 export async function loadActivity(
@@ -45,7 +54,13 @@ export async function loadActivity(
       `id, kind, actor, occurred_at, seq, details, customer_id,
        customer:customers ( full_name ),
        booking:bookings ( service:services ( name ) ),
-       message:messages ( body )`,
+       message:messages (
+         body,
+         conversation:conversations ( contact:contacts ( display_name, phone_e164 ) )
+       ),
+       action:pending_actions (
+         conversation:conversations ( contact:contacts ( display_name, phone_e164 ) )
+       )`,
     )
     .eq("business_id", owner.business.id)
     .gt("occurred_at", addMinutes(now, -ACTIVITY_DAYS * 24 * 60).toISOString())
@@ -65,6 +80,11 @@ export async function loadActivity(
         occurredAt,
         details: (e.details ?? {}) as Record<string, unknown>,
         customerName: e.customer?.full_name ?? null,
+        contactName: contactName(
+          e.message?.conversation?.contact ??
+            e.action?.conversation?.contact ??
+            null,
+        ),
         serviceName: e.booking?.service?.name ?? null,
         messageBody: e.message?.body ?? null,
       },

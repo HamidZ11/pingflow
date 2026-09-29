@@ -15,15 +15,19 @@
 // marketing version): Sarah has a lesson on the next weekday at 16:00 and
 // asks to move it to three weekdays later, "after 4". That day Omar has
 // 15:30–16:30 plus 15 minutes' travel, so the first free hour is 17:00.
-// Pingflow proposes it and the request waits in Attention.
+// Her message goes through the same pipeline a real one will (with a fixed
+// interpretation instead of a model), so Pingflow proposes 17:00 and the
+// request waits in Attention.
 
 import { createClient } from "@supabase/supabase-js";
+import { checkSlot, type ScheduleContext } from "@/domain/availability/engine";
 import {
-  availableSlots,
-  checkSlot,
-  type ScheduleContext,
-} from "@/domain/availability/engine";
+  interpretation,
+  type WeekdayName,
+} from "@/domain/messages/interpretation";
 import { formatDate, formatTime } from "@/domain/time/format";
+import { processInboundMessage } from "@/features/messages/pipeline";
+import { StaticMessageInterpreter } from "@/lib/ai/fixture-interpreter";
 import {
   addDays,
   addMinutes,
@@ -143,6 +147,8 @@ type Person = {
   contactName?: string;
   relationship?: Database["public"]["Enums"]["contact_relationship"];
   notes?: string;
+  /** Messages come from the same number as this person's (a parent). */
+  sharesContactWith?: string;
 };
 
 const people: Person[] = [
@@ -162,6 +168,15 @@ const people: Person[] = [
     contactName: "Dana Marsh",
     relationship: "parent",
     notes: "Dana (mum) arranges Leo’s lessons. Pick up from school.",
+  },
+  {
+    key: "adam",
+    name: "Adam Marsh",
+    phone: "+447700900567",
+    contactName: "Dana Marsh",
+    relationship: "parent",
+    sharesContactWith: "leo",
+    notes: "Leo’s brother. Dana books for both of them.",
   },
   { key: "aisha", name: "Aisha Begum", phone: "+447700900345" },
   { key: "jake", name: "Jake Doyle", phone: "+447700900678" },
@@ -195,6 +210,7 @@ const seriesPlans: SeriesPlan[] = [
   { person: "priya", service: "lesson", weekday: 4, start: "10:00" },
   { person: "tom", service: "long", weekday: 2, start: "09:00" },
   { person: "leo", service: "lesson", weekday: 3, start: "13:30" },
+  { person: "adam", service: "lesson", weekday: 4, start: "12:00" },
   { person: "aisha", service: "lesson", weekday: 5, start: "11:30" },
   { person: "jake", service: "long", weekday: 6, start: "09:30" },
   { person: "chloe", service: "lesson", weekday: chloeWeekday, start: "18:00" },
@@ -288,18 +304,23 @@ async function seed() {
         .single(),
       `Adding ${p.name}`,
     );
-    const contact = await must(
-      db
-        .from("contacts")
-        .insert({
-          business_id: businessId,
-          phone_e164: p.phone,
-          display_name: p.contactName ?? p.name,
-        })
-        .select("id")
-        .single(),
-      `Adding ${p.name}’s contact`,
-    );
+    const shared = p.sharesContactWith
+      ? contactIds.get(p.sharesContactWith)
+      : undefined;
+    const contact = shared
+      ? { id: shared }
+      : await must(
+          db
+            .from("contacts")
+            .insert({
+              business_id: businessId,
+              phone_e164: p.phone,
+              display_name: p.contactName ?? p.name,
+            })
+            .select("id")
+            .single(),
+          `Adding ${p.name}’s contact`,
+        );
     await must(
       db
         .from("customer_contacts")
@@ -424,142 +445,82 @@ async function seed() {
     );
   }
 
-  // Sarah's request.
-  const sarahBooking = bookingRows.find(
-    (b) =>
-      b.customer_id === customerIds.get("sarah") &&
-      dateKeyOf(new Date(b.starts_at), tz) === sarahDay,
-  )!;
-  const lessonStarts = new Date(sarahBooking.starts_at);
-  const receivedAt = addMinutes(now, -18);
+  // Sarah's request, through the same pipeline a real WhatsApp message
+  // will use. The interpretation is fixed here (the seed doesn't call a
+  // model); identity, the booking, dates, the proposal, the Attention item
+  // and activity all come from the pipeline itself.
+  // A few minutes ago, but never before today: "tomorrow" in her message is
+  // read against the day it arrived.
+  const startOfToday = zonedInstant(today, "00:00", tz);
+  const receivedAt = new Date(
+    Math.max(addMinutes(now, -18).getTime(), startOfToday.getTime()),
+  );
   receivedAt.setSeconds(0, 0);
-
-  const lessonRef =
-    sarahDay === addDays(today, 1)
-      ? "tomorrow’s lesson"
-      : `my ${formatDate(sarahDay, "weekday")} lesson`;
+  const lessonIsTomorrow = sarahDay === addDays(today, 1);
+  const lessonRef = lessonIsTomorrow
+    ? "tomorrow’s lesson"
+    : `my ${formatDate(sarahDay, "weekday")} lesson`;
   const body = `Hi! Something’s come up. Can we move ${lessonRef} to ${formatDate(requestedDay, "weekday")} after 4?`;
+  const weekdayName = (date: DateKey) =>
+    formatDate(date, "weekday").toLowerCase() as WeekdayName;
+  const lessonDay = lessonIsTomorrow
+    ? {
+        kind: "tomorrow" as const,
+        weekday: null,
+        week: null,
+        day: null,
+        month: null,
+      }
+    : {
+        kind: "weekday" as const,
+        weekday: weekdayName(sarahDay),
+        week: null,
+        day: null,
+        month: null,
+      };
 
-  const conversation = await must(
-    db
-      .from("conversations")
-      .insert({
-        business_id: businessId,
-        contact_id: contactIds.get("sarah")!,
-        last_message_at: receivedAt.toISOString(),
-      })
-      .select("id")
-      .single(),
-    "Opening Sarah’s conversation",
-  );
-  const message = await must(
-    db
-      .from("messages")
-      .insert({
-        business_id: businessId,
-        conversation_id: conversation.id,
-        direction: "inbound",
-        author: "contact",
-        body,
-        delivery: "received",
-        sent_at: receivedAt.toISOString(),
-      })
-      .select("id")
-      .single(),
-    "Recording Sarah’s message",
-  );
-
-  const lesson = serviceByKey.lesson;
-  const proposal = availableSlots(
-    ctx,
-    requestedDay,
+  const report = await processInboundMessage(
     {
-      durationMinutes: lesson.duration_minutes,
-      bufferMinutes: lesson.buffer_minutes,
-      ignoreBookingId: sarahBooking.id,
-    },
-    { notBefore: "16:00", now },
-  )[0];
-  if (!proposal) fail("No free time for Sarah’s request: check the plan.");
-
-  const understood = {
-    intent: "reschedule",
-    preferred_date: requestedDay,
-    earliest_time: "16:00",
-    booking_starts_at: lessonStarts.toISOString(),
-  };
-  const action = await must(
-    db
-      .from("pending_actions")
-      .insert({
-        business_id: businessId,
-        kind: "reschedule_request",
-        conversation_id: conversation.id,
-        customer_id: customerIds.get("sarah")!,
-        booking_id: sarahBooking.id!,
-        source_message_id: message.id,
-        understood,
-        proposed_starts_at: proposal.startsAt.toISOString(),
-        proposed_ends_at: proposal.endsAt.toISOString(),
-        created_at: receivedAt.toISOString(),
-      })
-      .select("id")
-      .single(),
-    "Adding Sarah’s request",
-  );
-
-  const step = (seconds: number) =>
-    new Date(receivedAt.getTime() + seconds * 1000).toISOString();
-  await must(
-    db
-      .from("activity_events")
-      .insert([
-        {
-          business_id: businessId,
-          occurred_at: step(0),
-          kind: "message_received",
-          actor: "contact",
-          customer_id: customerIds.get("sarah")!,
-          message_id: message.id,
-          details: {},
-        },
-        {
-          business_id: businessId,
-          occurred_at: step(2),
-          kind: "request_understood",
-          actor: "pingflow",
-          customer_id: customerIds.get("sarah")!,
-          booking_id: sarahBooking.id!,
-          pending_action_id: action.id,
-          details: understood,
-        },
-        {
-          business_id: businessId,
-          occurred_at: step(3),
-          kind: "time_proposed",
-          actor: "pingflow",
-          customer_id: customerIds.get("sarah")!,
-          booking_id: sarahBooking.id!,
-          pending_action_id: action.id,
-          details: {
-            starts_at: proposal.startsAt.toISOString(),
-            ends_at: proposal.endsAt.toISOString(),
+      db,
+      interpreter: new StaticMessageInterpreter(
+        interpretation({
+          intent: "reschedule_request",
+          referenced_booking: {
+            kind: "on_date",
+            date: lessonDay,
+            time: null,
+            service: "lesson",
           },
-        },
-        {
-          business_id: businessId,
-          occurred_at: step(4),
-          kind: "approval_requested",
-          actor: "pingflow",
-          customer_id: customerIds.get("sarah")!,
-          booking_id: sarahBooking.id!,
-          pending_action_id: action.id,
-          details: {},
-        },
-      ])
-      .select("id"),
-    "Recording activity",
+          requested_date: {
+            kind: "weekday",
+            weekday: weekdayName(requestedDay),
+            week: null,
+            day: null,
+            month: null,
+          },
+          requested_time: { constraint: "after", time: "16:00" },
+          short_reason: "move lesson",
+        }),
+      ),
+    },
+    {
+      businessId,
+      from: "+447700900123",
+      body,
+      receivedAt,
+      externalId: `seed-sarah-${today}`,
+      source: "simulator",
+    },
   );
+  if (
+    report.decision?.outcome !== "create_approval" ||
+    !report.decision.approval?.proposal
+  ) {
+    fail(
+      `Sarah’s request didn’t produce a proposal: ${JSON.stringify(report.decision)}`,
+    );
+  }
+  const proposal = { startsAt: new Date(report.decision.approval.proposal) };
 
   console.log(`
   Demo ready for ${email} (${scheduleMode} hours)

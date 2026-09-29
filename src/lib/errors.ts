@@ -21,6 +21,7 @@ const byHint: Record<string, string> = {
   invalid_hours: "Check your working hours.",
   no_business: "Finish setting up your business first.",
   no_conversation: "There is no conversation to reply in.",
+  missing_reply: "Write a reply first.",
   slot_unavailable:
     "That time was taken a moment ago. Choose another time; nothing was saved.",
   block_covers_booking:

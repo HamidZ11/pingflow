@@ -128,7 +128,13 @@ export default async function CustomerPage({
                   >
                     <Bubble
                       direction={m.direction === "outbound" ? "out" : "in"}
-                      sender={m.direction === "outbound" ? "Pingflow" : first}
+                      sender={
+                        m.direction === "inbound"
+                          ? first
+                          : m.author === "owner"
+                            ? "You"
+                            : "Pingflow"
+                      }
                       time={{ label: m.time, dateTime: m.dateTime }}
                       delivered={!m.simulated}
                     >
@@ -137,6 +143,11 @@ export default async function CustomerPage({
                     {m.simulated && (
                       <span className="mt-1 text-label text-ink-3">
                         Not sent: WhatsApp isn’t connected yet
+                      </span>
+                    )}
+                    {m.simulatedInbound && (
+                      <span className="mt-1 text-label text-ink-3">
+                        Simulated: not received on WhatsApp
                       </span>
                     )}
                   </li>

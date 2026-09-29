@@ -179,7 +179,7 @@ export async function loadCustomer(owner: Owner, id: string, now = new Date()) {
     conversationIds.length
       ? owner.supabase
           .from("messages")
-          .select("id, direction, author, body, delivery, sent_at")
+          .select("id, direction, author, body, delivery, source, sent_at")
           .eq("business_id", owner.business.id)
           .in("conversation_id", conversationIds)
           .order("sent_at", { ascending: false })
@@ -235,8 +235,11 @@ export async function loadCustomer(owner: Owner, id: string, now = new Date()) {
       .map((m) => ({
         id: m.id,
         direction: m.direction,
+        author: m.author,
         body: m.body,
         simulated: m.delivery === "simulated",
+        /** Came from the development simulator, not a real WhatsApp message. */
+        simulatedInbound: m.direction === "inbound" && m.source === "simulator",
         time: formatRelativeDateTime(new Date(m.sent_at), now, tz),
         dateTime: m.sent_at,
       })),

@@ -146,6 +146,7 @@ test("a taken time saves nothing at all", async () => {
   const { count } = await adminClient()
     .from("contacts")
     .select("*", { count: "exact", head: true })
+    .eq("business_id", businessId)
     .eq("phone_e164", "+447700900111");
   expect(count).toBe(0);
 });

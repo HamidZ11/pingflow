@@ -114,12 +114,16 @@ export function estimateTokenCostMicros(
   pricePerMillion: { input: number; output: number; cachedInput?: number },
 ): number {
   const cached = tokens.cachedInput ?? 0;
-  const cost =
-    (tokens.input - cached) * pricePerMillion.input +
-    cached * (pricePerMillion.cachedInput ?? pricePerMillion.input) +
-    tokens.output * pricePerMillion.output;
-  // Price per million tokens × tokens = micro-units of the currency.
-  return Math.round(cost);
+  // Integers throughout: each price becomes micro-units per million tokens
+  // ($0.20 → 200,000), so tokens × price is exact, and the total is
+  // rounded once, half up, to a whole micro-unit ($0.000001). A typical
+  // message costs a few hundred micro-units; nothing rounds to zero cents.
+  const perMillion = (price: number) => Math.round(price * 1_000_000);
+  const total =
+    (tokens.input - cached) * perMillion(pricePerMillion.input) +
+    cached * perMillion(pricePerMillion.cachedInput ?? pricePerMillion.input) +
+    tokens.output * perMillion(pricePerMillion.output);
+  return Math.floor((total + 500_000) / 1_000_000);
 }
 
 const slug = /^[a-z0-9_.-]+$/;

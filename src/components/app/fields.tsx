@@ -9,6 +9,11 @@ const control =
 
 export const inputClassName = cx(control, "h-11 md:h-10");
 
+export const textareaClassName = cx(
+  control,
+  "min-h-28 resize-y py-2.5 leading-normal",
+);
+
 export const selectClassName = cx(
   control,
   "h-11 appearance-none bg-[url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%2367645b' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E\")] bg-[length:1rem] bg-[right_0.75rem_center] bg-no-repeat pr-9 md:h-10",

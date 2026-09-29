@@ -41,3 +41,38 @@ export function rescheduleDecline(input: {
 }): string {
   return `Hi ${firstName(input.customerName)}, sorry, ${input.requested} doesn’t work this time. Your ${serviceNoun(input.serviceName)} stays on ${longWhen(input.currentStartsAt, input.timeZone)}.`;
 }
+
+export function bookingConfirmation(input: {
+  customerName: string;
+  serviceName: string;
+  startsAt: Date;
+  timeZone: string;
+}): string {
+  return `Hi ${firstName(input.customerName)}, that’s booked. Your ${serviceNoun(input.serviceName)} is on ${longWhen(input.startsAt, input.timeZone)}. See you then!`;
+}
+
+export function bookingDecline(input: {
+  customerName: string;
+  /** What they asked for, e.g. "Friday after 16:00". */
+  requested: string;
+}): string {
+  return `Hi ${firstName(input.customerName)}, sorry, ${input.requested} doesn’t work this time. Let me know if another day suits you.`;
+}
+
+export function cancellationConfirmation(input: {
+  customerName: string;
+  serviceName: string;
+  startsAt: Date;
+  timeZone: string;
+}): string {
+  return `Hi ${firstName(input.customerName)}, that’s done. Your ${serviceNoun(input.serviceName)} on ${longWhen(input.startsAt, input.timeZone)} is cancelled.`;
+}
+
+export function cancellationDecline(input: {
+  customerName: string;
+  serviceName: string;
+  startsAt: Date;
+  timeZone: string;
+}): string {
+  return `Hi ${firstName(input.customerName)}, I can’t cancel this one, sorry. Your ${serviceNoun(input.serviceName)} is still on ${longWhen(input.startsAt, input.timeZone)}.`;
+}

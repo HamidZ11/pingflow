@@ -4,11 +4,12 @@ import { useState } from "react";
 import { Overlay } from "@/components/app/overlay";
 import { Spinner } from "@/components/app/spinner";
 import { Button } from "@/components/button-link";
-import type { RescheduleItem } from "@/features/attention/data";
+import type { TimedRequestItem } from "@/features/attention/data";
 import { SlotPicker } from "@/features/schedule/slot-picker";
 
 // Real alternatives from the availability engine, starting on the day the
-// customer asked for. Picking one and confirming approves the move to it.
+// customer asked for. Picking one and confirming approves the request at it
+// (the move, or the new booking).
 export function ChooseTimeSheet({
   item,
   open,
@@ -17,7 +18,7 @@ export function ChooseTimeSheet({
   onClose,
   onConfirm,
 }: {
-  item: RescheduleItem;
+  item: TimedRequestItem;
   open: boolean;
   busy: boolean;
   error: string | null;
@@ -77,7 +78,9 @@ export function ChooseTimeSheet({
           query={{
             from: item.requested.date,
             days: 7,
-            bookingId: item.bookingId,
+            ...(item.type === "reschedule"
+              ? { bookingId: item.bookingId }
+              : { serviceId: item.service.id }),
           }}
           value={choice?.startsAt ?? null}
           onChange={(startsAt, label) => setChoice({ startsAt, label })}

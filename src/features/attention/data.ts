@@ -5,10 +5,25 @@ import {
   type Relationship,
   relationshipLabels,
 } from "@/domain/contacts/phone";
+import type { Intent } from "@/domain/messages/interpretation";
 import { firstName, serviceNoun } from "@/domain/messages/templates";
 import {
+  planBookingDecline,
+  readBookingUnderstanding,
+} from "@/domain/requests/booking";
+import {
+  planCancellationApproval,
+  planCancellationDecline,
+  readCancellationUnderstanding,
+} from "@/domain/requests/cancellation";
+import { describeOwnerTask } from "@/domain/requests/owner-task";
+import {
+  describeProposalReason,
   describeRequestedTime,
   describeRequestedTimeLong,
+  type RequestedTime,
+} from "@/domain/requests/requested-time";
+import {
   planRescheduleDecline,
   readRescheduleUnderstanding,
 } from "@/domain/requests/reschedule";
@@ -23,11 +38,15 @@ import {
 } from "@/domain/time/format";
 import {
   addMinutes,
+  clockTimeOf,
   dateKeyOf,
   minutesBetween,
   type Weekday,
 } from "@/domain/time/zoned";
-import { loadEngineContext } from "@/features/schedule/engine-context";
+import {
+  loadAutomation,
+  loadEngineContext,
+} from "@/features/schedule/engine-context";
 import type { Owner } from "@/lib/auth/session";
 
 // Attention: the open requests that need the owner, shaped for display.
@@ -75,42 +94,92 @@ export type DayEntry = {
   kind: "booking" | "travel" | "blocked" | "free" | "proposal" | "current";
 };
 
-export type RescheduleItem = {
-  type: "reschedule";
+type Customer = {
+  id: string;
+  name: string;
+  firstName: string;
+  contact: string | null;
+};
+
+type InboundMessage = { body: string; time: string; dateTime: string };
+
+type ServiceSummary = { name: string; length: string; buffer: string | null };
+
+type Requested = {
+  short: string;
+  long: string;
+  date: string;
+  day: string;
+  earliestTime: string | null;
+};
+
+export type Proposal = {
+  startsAt: string;
+  day: string;
+  weekday: string;
+  weekdayShort: string;
+  start: string;
+  time: string;
+  stillFree: boolean;
+  reason: string;
+};
+
+type RequestBase = {
   id: string;
   receivedAt: string;
   receivedLabel: string;
-  customer: {
-    id: string;
-    name: string;
-    firstName: string;
-    contact: string | null;
-  };
-  message: { body: string; time: string; dateTime: string } | null;
+  customer: Customer;
+  message: InboundMessage | null;
   headline: string;
-  service: { name: string; length: string; buffer: string | null };
+};
+
+export type RescheduleItem = RequestBase & {
+  type: "reschedule";
+  service: ServiceSummary;
   series: string | null;
   current: { day: string; relativeDay: string; time: string };
   bookingId: string;
-  requested: {
-    short: string;
-    long: string;
-    date: string;
-    day: string;
-    earliestTime: string | null;
-  };
-  proposal: {
-    startsAt: string;
-    day: string;
-    weekday: string;
-    weekdayShort: string;
-    start: string;
-    time: string;
-    stillFree: boolean;
-    reason: string;
-  } | null;
+  requested: Requested;
+  proposal: Proposal | null;
   requestedDay: { label: string; entries: DayEntry[] };
   declineReply: string;
+};
+
+export type BookingRequestItem = RequestBase & {
+  type: "booking";
+  service: ServiceSummary & { id: string };
+  requested: Requested;
+  proposal: Proposal | null;
+  requestedDay: { label: string; entries: DayEntry[] };
+  declineReply: string;
+};
+
+export type CancellationItem = RequestBase & {
+  type: "cancellation";
+  service: ServiceSummary;
+  series: string | null;
+  booking: { day: string; time: string; active: boolean };
+  /** They may have meant more than this one booking. */
+  scopeNote: string | null;
+  confirmReply: string | null;
+  declineReply: string;
+};
+
+/** A request with a time to approve: moving a booking or making one. */
+export type TimedRequestItem = RescheduleItem | BookingRequestItem;
+
+export type ReplyItem = {
+  type: "reply";
+  id: string;
+  receivedAt: string;
+  receivedLabel: string;
+  customer: { id: string; name: string } | null;
+  /** Who sent it: a customer's first name, a contact's name or a number. */
+  sender: { name: string; detail: string };
+  title: string;
+  explanation: string | null;
+  message: InboundMessage | null;
+  draft: string | null;
 };
 
 export type NoteItem = {
@@ -123,7 +192,8 @@ export type NoteItem = {
   body: string | null;
 };
 
-export type AttentionItem = RescheduleItem | NoteItem;
+export type AttentionItem =
+  RescheduleItem | BookingRequestItem | CancellationItem | ReplyItem | NoteItem;
 
 export async function loadAttention(
   owner: Owner,
@@ -145,12 +215,19 @@ export async function loadAttention(
          series:booking_series ( weekday, start_time, interval_weeks ),
          service:services ( name, duration_minutes )
        ),
+       conversation:conversations ( contact:contacts ( display_name, phone_e164 ) ),
        message:messages ( body, sent_at )`,
     )
     .eq("business_id", owner.business.id)
     .eq("status", "open")
     .order("created_at", { ascending: true });
   if (error) throw error;
+
+  const needsServices = data.some((row) => row.kind === "booking_request");
+  const services = needsServices ? await loadServices(owner) : new Map();
+  const automation = data.some((row) => row.kind === "cancellation_request")
+    ? await loadAutomation(owner)
+    : null;
 
   const items: AttentionItem[] = [];
   for (const row of data) {
@@ -159,154 +236,208 @@ export async function loadAttention(
       now,
       tz,
     );
+    const customer = row.customer
+      ? {
+          id: row.customer.id,
+          name: row.customer.full_name,
+          firstName: firstName(row.customer.full_name),
+          contact: describeContact(row.customer.links as ContactRow[]),
+        }
+      : null;
+    const message = row.message
+      ? {
+          body: row.message.body,
+          time: formatRelativeDateTime(new Date(row.message.sent_at), now, tz),
+          dateTime: row.message.sent_at,
+        }
+      : null;
+    const base = {
+      id: row.id,
+      receivedAt: row.created_at,
+      receivedLabel,
+      message,
+    };
 
-    if (row.kind !== "reschedule_request") {
+    if (row.kind === "reply_needed") {
       const understood = (row.understood ?? {}) as Record<string, unknown>;
+      // Older notes carry their own summary.
+      if (typeof understood.summary === "string") {
+        items.push(note(row, receivedLabel, understood.summary));
+        continue;
+      }
+      const contact = row.conversation?.contact ?? null;
+      const phone = contact ? formatPhone(contact.phone_e164) : null;
+      const who =
+        customer?.firstName ?? contact?.display_name ?? phone ?? "Someone";
+      const draft =
+        typeof understood.draft === "string" && understood.draft.trim()
+          ? understood.draft
+          : null;
+      const described = describeOwnerTask({
+        reason:
+          typeof understood.reason === "string" ? understood.reason : null,
+        intent: (understood.intent as Intent | null) ?? null,
+        who,
+        noun: serviceNoun(services.values().next().value?.name ?? "booking"),
+        hasDraft: Boolean(draft),
+      });
       items.push({
-        type: "note",
-        id: row.id,
-        category: row.kind === "failure" ? "failed" : "reply",
-        receivedLabel,
-        customer: row.customer
-          ? { id: row.customer.id, name: row.customer.full_name }
-          : null,
-        title:
-          typeof understood.summary === "string"
-            ? understood.summary
-            : row.kind === "failure"
-              ? "Something didn’t go through"
-              : "A message needs your reply",
-        body: row.message?.body ?? null,
+        type: "reply",
+        ...base,
+        customer: customer ? { id: customer.id, name: customer.name } : null,
+        sender: {
+          name:
+            customer?.firstName ?? contact?.display_name ?? phone ?? "Unknown",
+          detail: customer
+            ? (customer.contact ?? customer.name)
+            : [contact?.display_name, phone].filter(Boolean).join(" · ") ||
+              "Unknown number",
+        },
+        title: described.title,
+        explanation: described.explanation,
+        draft,
       });
       continue;
     }
 
-    const understanding = readRescheduleUnderstanding(row.understood);
-    const booking = row.booking;
-    const customer = row.customer;
-    if (!understanding || !booking || !customer || !booking.service) continue;
+    if (row.kind === "failure" || !customer) {
+      items.push(note(row, receivedLabel));
+      continue;
+    }
 
+    if (row.kind === "booking_request") {
+      const understanding = readBookingUnderstanding(row.understood);
+      const service = understanding
+        ? services.get(understanding.serviceId)
+        : undefined;
+      if (!understanding || !service) {
+        items.push(note(row, receivedLabel));
+        continue;
+      }
+      const timed = await timedRequest(owner, {
+        requested: understanding,
+        proposedStartsAt: row.proposed_starts_at,
+        lengthMinutes: service.duration_minutes,
+        bufferMinutes: service.buffer_minutes,
+        bookingId: null,
+        today,
+        now,
+      });
+      items.push({
+        type: "booking",
+        ...base,
+        customer,
+        headline: `${customer.name} wants to book a ${serviceNoun(service.name)}`,
+        service: {
+          id: service.id,
+          ...summariseService(
+            service.name,
+            service.duration_minutes,
+            service.buffer_minutes,
+          ),
+        },
+        ...timed,
+        declineReply: planBookingDecline({
+          understanding,
+          customerName: customer.name,
+          today,
+        }).replyBody,
+      });
+      continue;
+    }
+
+    const booking = row.booking;
+    if (!booking?.service) {
+      items.push(note(row, receivedLabel));
+      continue;
+    }
     const startsAt = new Date(booking.starts_at);
     const endsAt = new Date(booking.ends_at);
     const lengthMinutes = minutesBetween(startsAt, endsAt);
     const currentDate = dateKeyOf(startsAt, tz);
     const noun = serviceNoun(booking.service.name);
-
-    // Look at the requested day as it is now, not as it was when the
-    // customer asked: the proposal may have been taken since.
-    const context = await loadEngineContext(
-      owner,
-      understanding.preferredDate,
-      1,
+    const service = summariseService(
+      booking.service.name,
+      lengthMinutes,
+      booking.buffer_minutes,
     );
-    const proposedStart = row.proposed_starts_at
-      ? new Date(row.proposed_starts_at)
-      : null;
-    const names = await customerNamesFor(
-      owner,
-      context.bookings.map((b) => b.id),
-    );
-    const stillFree = proposedStart
-      ? checkSlot(
-          context,
-          proposedStart,
-          {
-            durationMinutes: lengthMinutes,
-            bufferMinutes: booking.buffer_minutes,
-            ignoreBookingId: booking.id,
-          },
-          { now },
-        ).ok
-      : false;
-
-    const requestedShort = describeRequestedTime(understanding, today);
-    const proposal = proposedStart
-      ? {
-          startsAt: proposedStart.toISOString(),
-          day: formatDate(dateKeyOf(proposedStart, tz)),
-          weekday: formatDate(dateKeyOf(proposedStart, tz), "weekday"),
-          weekdayShort: formatDate(
-            dateKeyOf(proposedStart, tz),
-            "weekday-short",
-          ),
-          start: formatTime(proposedStart, tz),
-          time: formatTimeRange(
-            proposedStart,
-            addMinutes(proposedStart, lengthMinutes),
-            tz,
-          ),
-          stillFree,
-          reason: `It’s the first free ${lengthMinutes === 60 ? "hour" : "slot"} ${understanding.earliestTime ? `after ${understanding.earliestTime}` : "that day"}, allowing travel time.`,
-        }
+    const series = booking.series
+      ? describeSeries({
+          weekday: booking.series.weekday as Weekday,
+          startTime: booking.series.start_time,
+          intervalWeeks: booking.series.interval_weeks,
+        })
       : null;
 
+    if (row.kind === "cancellation_request") {
+      const understanding = readCancellationUnderstanding(row.understood);
+      if (!understanding) {
+        items.push(note(row, receivedLabel));
+        continue;
+      }
+      const facts = {
+        customerName: customer.name,
+        serviceName: booking.service.name,
+        startsAt,
+        timeZone: tz,
+      };
+      items.push({
+        type: "cancellation",
+        ...base,
+        customer,
+        headline: `${customer.name} wants to cancel ${whichBooking(currentDate, today, noun)}`,
+        service,
+        series,
+        booking: {
+          day: formatDate(currentDate),
+          time: formatTimeRange(startsAt, endsAt, tz),
+          active: booking.status === "confirmed" && startsAt > now,
+        },
+        scopeNote:
+          understanding.scope === "single" || !series
+            ? null
+            : `They may mean every ${noun}. Approving cancels this one only; the rest stay booked.`,
+        confirmReply: planCancellationApproval({
+          ...facts,
+          confirmationsEnabled: automation?.confirmationsEnabled ?? true,
+        }).replyBody,
+        declineReply: planCancellationDecline(facts).replyBody,
+      });
+      continue;
+    }
+
+    const understanding = readRescheduleUnderstanding(row.understood);
+    if (!understanding) {
+      items.push(note(row, receivedLabel));
+      continue;
+    }
+    const timed = await timedRequest(owner, {
+      requested: understanding,
+      proposedStartsAt: row.proposed_starts_at,
+      lengthMinutes,
+      bufferMinutes: booking.buffer_minutes,
+      bookingId: booking.id,
+      today,
+      now,
+    });
     items.push({
       type: "reschedule",
-      id: row.id,
-      receivedAt: row.created_at,
-      receivedLabel,
-      customer: {
-        id: customer.id,
-        name: customer.full_name,
-        firstName: firstName(customer.full_name),
-        contact: describeContact(customer.links as ContactRow[]),
-      },
-      message: row.message
-        ? {
-            body: row.message.body,
-            time: formatRelativeDateTime(
-              new Date(row.message.sent_at),
-              now,
-              tz,
-            ),
-            dateTime: row.message.sent_at,
-          }
-        : null,
-      headline: `${customer.full_name} wants to move ${whichBooking(currentDate, today, noun)}`,
-      service: {
-        name: booking.service.name,
-        length: formatDuration(lengthMinutes),
-        buffer: booking.buffer_minutes
-          ? `${formatDuration(booking.buffer_minutes)} after for travel`
-          : null,
-      },
-      series: booking.series
-        ? describeSeries({
-            weekday: booking.series.weekday as Weekday,
-            startTime: booking.series.start_time,
-            intervalWeeks: booking.series.interval_weeks,
-          })
-        : null,
+      ...base,
+      customer,
+      headline: `${customer.name} wants to move ${whichBooking(currentDate, today, noun)}`,
+      service,
+      series,
       current: {
         day: formatDate(currentDate),
         relativeDay: formatRelativeDate(currentDate, today),
         time: formatTimeRange(startsAt, endsAt, tz),
       },
       bookingId: booking.id,
-      requested: {
-        short: requestedShort,
-        long: describeRequestedTimeLong(understanding),
-        date: understanding.preferredDate,
-        day: formatDate(understanding.preferredDate, "long"),
-        earliestTime: understanding.earliestTime,
-      },
-      proposal,
-      requestedDay: {
-        label: formatDate(understanding.preferredDate, "long"),
-        entries: requestedDayEntries(
-          context,
-          names,
-          understanding.preferredDate,
-          booking.id,
-          proposedStart,
-          lengthMinutes,
-          stillFree,
-        ),
-      },
+      ...timed,
       declineReply: planRescheduleDecline({
         understanding,
         currentStartsAt: startsAt,
-        customerName: customer.full_name,
+        customerName: customer.name,
         serviceName: booking.service.name,
         timeZone: tz,
         today,
@@ -314,6 +445,138 @@ export async function loadAttention(
     });
   }
   return items;
+}
+
+type Row = {
+  id: string;
+  kind: string;
+  customer: { id: string; full_name: string } | null;
+  message: { body: string } | null;
+};
+
+function note(row: Row, receivedLabel: string, summary?: string): NoteItem {
+  return {
+    type: "note",
+    id: row.id,
+    category: row.kind === "failure" ? "failed" : "reply",
+    receivedLabel,
+    customer: row.customer
+      ? { id: row.customer.id, name: row.customer.full_name }
+      : null,
+    title:
+      summary ??
+      (row.kind === "failure"
+        ? "Something didn’t go through"
+        : "A message needs your reply"),
+    body: row.message?.body ?? null,
+  };
+}
+
+function summariseService(
+  name: string,
+  lengthMinutes: number,
+  bufferMinutes: number,
+): ServiceSummary {
+  return {
+    name,
+    length: formatDuration(lengthMinutes),
+    buffer: bufferMinutes
+      ? `${formatDuration(bufferMinutes)} after for travel`
+      : null,
+  };
+}
+
+async function loadServices(owner: Owner) {
+  const { data, error } = await owner.supabase
+    .from("services")
+    .select("id, name, duration_minutes, buffer_minutes")
+    .eq("business_id", owner.business.id);
+  if (error) throw error;
+  return new Map(data.map((s) => [s.id, s]));
+}
+
+/**
+ * The asked-for day as it is now, not as it was when the customer asked:
+ * the proposal may have been taken since.
+ */
+async function timedRequest(
+  owner: Owner,
+  input: {
+    requested: RequestedTime;
+    proposedStartsAt: string | null;
+    lengthMinutes: number;
+    bufferMinutes: number;
+    bookingId: string | null;
+    today: string;
+    now: Date;
+  },
+) {
+  const tz = owner.business.timeZone;
+  const { requested, lengthMinutes } = input;
+  const context = await loadEngineContext(owner, requested.preferredDate, 1);
+  const proposedStart = input.proposedStartsAt
+    ? new Date(input.proposedStartsAt)
+    : null;
+  const names = await customerNamesFor(
+    owner,
+    context.bookings.map((b) => b.id),
+  );
+  const stillFree = proposedStart
+    ? checkSlot(
+        context,
+        proposedStart,
+        {
+          durationMinutes: lengthMinutes,
+          bufferMinutes: input.bufferMinutes,
+          ignoreBookingId: input.bookingId ?? undefined,
+        },
+        { now: input.now },
+      ).ok
+    : false;
+
+  const proposal: Proposal | null = proposedStart
+    ? {
+        startsAt: proposedStart.toISOString(),
+        day: formatDate(dateKeyOf(proposedStart, tz)),
+        weekday: formatDate(dateKeyOf(proposedStart, tz), "weekday"),
+        weekdayShort: formatDate(dateKeyOf(proposedStart, tz), "weekday-short"),
+        start: formatTime(proposedStart, tz),
+        time: formatTimeRange(
+          proposedStart,
+          addMinutes(proposedStart, lengthMinutes),
+          tz,
+        ),
+        stillFree,
+        reason: describeProposalReason(
+          requested,
+          clockTimeOf(proposedStart, tz),
+          lengthMinutes,
+        ),
+      }
+    : null;
+
+  return {
+    requested: {
+      short: describeRequestedTime(requested, input.today),
+      long: describeRequestedTimeLong(requested),
+      date: requested.preferredDate,
+      day: formatDate(requested.preferredDate, "long"),
+      earliestTime: requested.earliestTime,
+    },
+    proposal,
+    requestedDay: {
+      label: formatDate(requested.preferredDate, "long"),
+      entries: requestedDayEntries(
+        context,
+        names,
+        requested.preferredDate,
+        input.bookingId,
+        proposedStart,
+        lengthMinutes,
+        stillFree,
+      ),
+    },
+  };
 }
 
 // The requested day at a glance, for the context sheet: other bookings with
@@ -333,7 +596,7 @@ function requestedDayEntries(
   context: Awaited<ReturnType<typeof loadEngineContext>>,
   names: Map<string, string>,
   date: string,
-  bookingId: string,
+  bookingId: string | null,
   proposedStart: Date | null,
   lengthMinutes: number,
   stillFree: boolean,

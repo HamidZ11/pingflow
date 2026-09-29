@@ -6,66 +6,30 @@ import {
   type ReminderSettings,
   reminderSendAt,
 } from "@/domain/reminders/policy";
-import { formatDate, formatRelativeDate } from "@/domain/time/format";
 import {
-  type ClockTime,
-  type DateKey,
-  isClockTime,
-  isDateKey,
-} from "@/domain/time/zoned";
+  describeRequestedTime,
+  describeRequestedTimeLong,
+  type RequestedTime,
+  readRequestedTime,
+} from "@/domain/requests/requested-time";
+import type { DateKey } from "@/domain/time/zoned";
 
 // A customer's request to move a booking, as Pingflow understood it, and
 // what happens when the owner answers it.
 
-export type RescheduleUnderstanding = {
-  intent: "reschedule";
-  /** The day they asked for. */
-  preferredDate: DateKey;
-  /** "after 4" → "16:00". Null when they didn't say. */
-  earliestTime: ClockTime | null;
-};
+export type RescheduleUnderstanding = RequestedTime & { intent: "reschedule" };
 
 /** Reads the structured interpretation stored with a request. */
 export function readRescheduleUnderstanding(
   value: unknown,
 ): RescheduleUnderstanding | null {
   if (!value || typeof value !== "object") return null;
-  const v = value as Record<string, unknown>;
-  if (v.intent !== "reschedule" || !isDateKey(v.preferred_date)) return null;
-  return {
-    intent: "reschedule",
-    preferredDate: v.preferred_date,
-    earliestTime: isClockTime(v.earliest_time) ? v.earliest_time : null,
-  };
+  if ((value as Record<string, unknown>).intent !== "reschedule") return null;
+  const requested = readRequestedTime(value);
+  return requested ? { intent: "reschedule", ...requested } : null;
 }
 
-/**
- * "Friday after 16:00", "Tomorrow", "Mon 12 Oct after 09:30". Inside a
- * sentence, "Tomorrow" becomes "tomorrow".
- */
-export function describeRequestedTime(
-  understanding: RescheduleUnderstanding,
-  today: DateKey,
-  { inSentence = false } = {},
-): string {
-  let day = formatRelativeDate(understanding.preferredDate, today);
-  if (inSentence && ["Today", "Tomorrow", "Yesterday"].includes(day)) {
-    day = day.toLowerCase();
-  }
-  return understanding.earliestTime
-    ? `${day} after ${understanding.earliestTime}`
-    : day;
-}
-
-/** "Friday 2 October, after 16:00", for the full context. */
-export function describeRequestedTimeLong(
-  understanding: RescheduleUnderstanding,
-): string {
-  const day = formatDate(understanding.preferredDate, "long");
-  return understanding.earliestTime
-    ? `${day}, after ${understanding.earliestTime}`
-    : day;
-}
+export { describeRequestedTime, describeRequestedTimeLong };
 
 export type AutomationChoices = {
   confirmationsEnabled: boolean;

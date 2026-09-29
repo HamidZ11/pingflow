@@ -367,6 +367,7 @@ export type Database = {
           automation_paused_at: string | null;
           business_id: string;
           channel: string;
+          clarification: Json | null;
           contact_id: string;
           created_at: string;
           id: string;
@@ -376,6 +377,7 @@ export type Database = {
           automation_paused_at?: string | null;
           business_id: string;
           channel?: string;
+          clarification?: Json | null;
           contact_id: string;
           created_at?: string;
           id?: string;
@@ -385,6 +387,7 @@ export type Database = {
           automation_paused_at?: string | null;
           business_id?: string;
           channel?: string;
+          clarification?: Json | null;
           contact_id?: string;
           created_at?: string;
           id?: string;
@@ -471,6 +474,88 @@ export type Database = {
           },
         ];
       };
+      message_processing_runs: {
+        Row: {
+          attempts: number;
+          business_id: string;
+          claimed_at: string | null;
+          completed_at: string | null;
+          conversation_id: string;
+          created_at: string;
+          decision: string | null;
+          decision_detail: Json | null;
+          error_category: string | null;
+          id: string;
+          interpretation: Json | null;
+          interpreter: string | null;
+          message_id: string;
+          model: string | null;
+          prompt_version: string | null;
+          status: Database["public"]["Enums"]["processing_status"];
+          updated_at: string;
+        };
+        Insert: {
+          attempts?: number;
+          business_id: string;
+          claimed_at?: string | null;
+          completed_at?: string | null;
+          conversation_id: string;
+          created_at?: string;
+          decision?: string | null;
+          decision_detail?: Json | null;
+          error_category?: string | null;
+          id?: string;
+          interpretation?: Json | null;
+          interpreter?: string | null;
+          message_id: string;
+          model?: string | null;
+          prompt_version?: string | null;
+          status?: Database["public"]["Enums"]["processing_status"];
+          updated_at?: string;
+        };
+        Update: {
+          attempts?: number;
+          business_id?: string;
+          claimed_at?: string | null;
+          completed_at?: string | null;
+          conversation_id?: string;
+          created_at?: string;
+          decision?: string | null;
+          decision_detail?: Json | null;
+          error_category?: string | null;
+          id?: string;
+          interpretation?: Json | null;
+          interpreter?: string | null;
+          message_id?: string;
+          model?: string | null;
+          prompt_version?: string | null;
+          status?: Database["public"]["Enums"]["processing_status"];
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "message_processing_runs_business_id_conversation_id_fkey";
+            columns: ["business_id", "conversation_id"];
+            isOneToOne: false;
+            referencedRelation: "conversations";
+            referencedColumns: ["business_id", "id"];
+          },
+          {
+            foreignKeyName: "message_processing_runs_business_id_fkey";
+            columns: ["business_id"];
+            isOneToOne: false;
+            referencedRelation: "businesses";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "message_processing_runs_business_id_message_id_fkey";
+            columns: ["business_id", "message_id"];
+            isOneToOne: false;
+            referencedRelation: "messages";
+            referencedColumns: ["business_id", "id"];
+          },
+        ];
+      };
       messages: {
         Row: {
           author: Database["public"]["Enums"]["message_author"];
@@ -479,8 +564,11 @@ export type Database = {
           conversation_id: string;
           delivery: Database["public"]["Enums"]["message_delivery"];
           direction: Database["public"]["Enums"]["message_direction"];
+          external_id: string | null;
           id: string;
+          processing_run_id: string | null;
           sent_at: string;
+          source: Database["public"]["Enums"]["message_source"];
         };
         Insert: {
           author: Database["public"]["Enums"]["message_author"];
@@ -489,8 +577,11 @@ export type Database = {
           conversation_id: string;
           delivery: Database["public"]["Enums"]["message_delivery"];
           direction: Database["public"]["Enums"]["message_direction"];
+          external_id?: string | null;
           id?: string;
+          processing_run_id?: string | null;
           sent_at?: string;
+          source?: Database["public"]["Enums"]["message_source"];
         };
         Update: {
           author?: Database["public"]["Enums"]["message_author"];
@@ -499,8 +590,11 @@ export type Database = {
           conversation_id?: string;
           delivery?: Database["public"]["Enums"]["message_delivery"];
           direction?: Database["public"]["Enums"]["message_direction"];
+          external_id?: string | null;
           id?: string;
+          processing_run_id?: string | null;
           sent_at?: string;
+          source?: Database["public"]["Enums"]["message_source"];
         };
         Relationships: [
           {
@@ -508,6 +602,13 @@ export type Database = {
             columns: ["business_id", "conversation_id"];
             isOneToOne: false;
             referencedRelation: "conversations";
+            referencedColumns: ["business_id", "id"];
+          },
+          {
+            foreignKeyName: "messages_processing_run_fkey";
+            columns: ["business_id", "processing_run_id"];
+            isOneToOne: false;
+            referencedRelation: "message_processing_runs";
             referencedColumns: ["business_id", "id"];
           },
         ];
@@ -838,6 +939,11 @@ export type Database = {
         Returns: string;
       };
       cancel_booking: { Args: { p_booking_id: string }; Returns: undefined };
+      claim_message_run: { Args: { p_run_id: string }; Returns: number };
+      complete_message_run: {
+        Args: { p_attempt: number; p_result: Json; p_run_id: string };
+        Returns: Json;
+      };
       complete_onboarding: { Args: { p_setup: Json }; Returns: string };
       create_booking: {
         Args: {
@@ -873,6 +979,28 @@ export type Database = {
         Args: { p_action_id: string };
         Returns: undefined;
       };
+      fail_message_run: {
+        Args: {
+          p_attempt: number;
+          p_error_category: string;
+          p_interpreter?: string;
+          p_model?: string;
+          p_prompt_version?: string;
+          p_run_id: string;
+        };
+        Returns: Json;
+      };
+      ingest_inbound_message: {
+        Args: {
+          p_body: string;
+          p_business_id: string;
+          p_external_id: string;
+          p_phone_e164: string;
+          p_received_at: string;
+          p_source?: Database["public"]["Enums"]["message_source"];
+        };
+        Returns: Json;
+      };
       move_booking: {
         Args: {
           p_booking_id: string;
@@ -883,6 +1011,28 @@ export type Database = {
       };
       remove_schedule_block: {
         Args: { p_block_id: string };
+        Returns: undefined;
+      };
+      reply_to_pending_action: {
+        Args: { p_action_id: string; p_body: string };
+        Returns: undefined;
+      };
+      resolve_booking_request: {
+        Args: {
+          p_action_id: string;
+          p_decision: string;
+          p_reminder_send_at?: string;
+          p_reply_body?: string;
+          p_starts_at?: string;
+        };
+        Returns: undefined;
+      };
+      resolve_cancellation_request: {
+        Args: {
+          p_action_id: string;
+          p_decision: string;
+          p_reply_body?: string;
+        };
         Returns: undefined;
       };
       resolve_reschedule_request: {
@@ -930,7 +1080,8 @@ export type Database = {
         | "time_blocked"
         | "block_removed"
         | "customer_added"
-        | "automation_resumed";
+        | "automation_resumed"
+        | "reply_needed";
       booking_status: "confirmed" | "cancelled";
       business_type:
         | "driving_instructor"
@@ -946,6 +1097,7 @@ export type Database = {
       message_author: "contact" | "pingflow" | "owner";
       message_delivery: "received" | "simulated" | "sent" | "failed";
       message_direction: "inbound" | "outbound";
+      message_source: "whatsapp" | "simulator";
       pending_action_kind:
         | "reschedule_request"
         | "booking_request"
@@ -954,6 +1106,7 @@ export type Database = {
         | "failure";
       pending_action_status:
         "open" | "approved" | "declined" | "taken_over" | "dismissed";
+      processing_status: "pending" | "processing" | "completed" | "failed";
       reminder_status: "scheduled" | "sent" | "cancelled" | "failed";
       schedule_mode: "regular" | "flexible";
       usage_category: "ai" | "whatsapp" | "email" | "other";
@@ -1109,6 +1262,7 @@ export const Constants = {
         "block_removed",
         "customer_added",
         "automation_resumed",
+        "reply_needed",
       ],
       booking_status: ["confirmed", "cancelled"],
       business_type: [
@@ -1125,6 +1279,7 @@ export const Constants = {
       message_author: ["contact", "pingflow", "owner"],
       message_delivery: ["received", "simulated", "sent", "failed"],
       message_direction: ["inbound", "outbound"],
+      message_source: ["whatsapp", "simulator"],
       pending_action_kind: [
         "reschedule_request",
         "booking_request",
@@ -1139,6 +1294,7 @@ export const Constants = {
         "taken_over",
         "dismissed",
       ],
+      processing_status: ["pending", "processing", "completed", "failed"],
       reminder_status: ["scheduled", "sent", "cancelled", "failed"],
       schedule_mode: ["regular", "flexible"],
       usage_category: ["ai", "whatsapp", "email", "other"],

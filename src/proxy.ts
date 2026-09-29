@@ -1,7 +1,15 @@
-import type { NextRequest } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
+import { devToolsEnabled } from "@/features/messages/dev/enabled";
 import { updateSession } from "@/lib/supabase/proxy";
 
 export async function proxy(request: NextRequest) {
+  // Development tools don't exist outside `next dev`, signed in or not.
+  if (request.nextUrl.pathname.startsWith("/app/dev") && !devToolsEnabled()) {
+    return new NextResponse("Not found", {
+      status: 404,
+      headers: { "content-type": "text/plain; charset=utf-8" },
+    });
+  }
   return updateSession(request);
 }
 

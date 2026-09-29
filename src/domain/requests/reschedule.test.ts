@@ -29,6 +29,8 @@ describe("reading what Pingflow understood", () => {
       intent: "reschedule",
       preferredDate: "2026-10-02",
       earliestTime: "16:00",
+      timeConstraint: "after",
+      time: "16:00",
     });
   });
 
