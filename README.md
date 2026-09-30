@@ -78,7 +78,7 @@ Interpreters (`src/lib/ai/config.ts` picks one):
 
 ### Message simulator
 
-In `pnpm dev`, `/app/dev/messages` sends a pretend WhatsApp message from any of your contacts (or another number) through the real pipeline for your business, and shows what happened: identity, interpretation, decision, reply, usage and cost. It lists recent runs and can reprocess failed ones. It isn't in the navigation, and outside development it doesn't exist: the proxy answers 404, and the page and its actions check again.
+In `pnpm dev`, `/app/dev/messages` sends a pretend WhatsApp message from any of your contacts (or another number) through the real pipeline for your business, and shows what happened: identity, interpretation, decision, reply, usage and cost. If the business has an owner number (the demo's is +44 7700 900001), "You, the owner" sends an [owner command](#owner-commands) instead. It lists recent runs and can reprocess failed ones. It isn't in the navigation, and outside development it doesn't exist: the proxy answers 404, and the page and its actions check again.
 
 ### Cost tracking
 
@@ -91,6 +91,7 @@ Each model call writes one row to the usage ledger with the tokens the API repor
 Two opt-in commands use the real API. They cost money, need `OPENAI_API_KEY` in `.env.local`, and say what they will send before sending it:
 
 - `pnpm ai:eval` sends all 41 corpus messages (`--limit 20` for fewer) and judges each reading by what Pingflow would then do: intent, dates, times, person, service, clarification, outcome and structured-output validity, with each miss rated critical, important or minor. It counts every API request, stops rather than exceed one retry per message, and reports latency, tokens, cache hits and cost. Results are saved to `results/ai-evals/` (git-ignored) as JSON: the synthetic messages, readings and totals, never keys. It writes nothing to the database.
+- `pnpm ai:eval --owner` does the same for the 37 owner commands in `src/domain/owner/fixtures/`: intent, dates, times, person, clarification and outcome, with a different change rated critical.
 - `pnpm ai:smoke` sends five messages (next booking, availability, reschedule, an unclear one and a cancellation) through the whole pipeline into a fresh local demo business, `ai-smoke@pingflow.test`, and checks the replies, Attention, that no booking changed, and the usage ledger.
 
 ## WhatsApp
@@ -135,6 +136,14 @@ This is for building and testing with one number. It is not customer onboarding 
 7. For reminders and confirmations after 24 hours, create utility templates in WhatsApp Manager, register them (`pnpm whatsapp template you@example.com appointment_reminder <name> en_GB customer_first_name,when`) and check their review status (`pnpm whatsapp templates-sync you@example.com`). Only approved templates are sent. The fields a template can use are in `src/domain/channel/templates.ts`.
 
 Without a tunnel, `pnpm whatsapp simulate you@example.com "When's my next lesson?"` posts a correctly signed, Meta-shaped webhook to your local app. In development, `/app/dev/whatsapp` shows the connection's IDs, recent events, the outbox and templates (never tokens), and can run the worker.
+
+### Owner commands
+
+The owner can message the business number from their own phone to check and change the schedule: "Who have I got tomorrow?", "When is Sarah booked?", "Am I free Friday at 5?", "Move Sarah to Friday at 4", "Cancel Tom tomorrow", "Block Thursday afternoon".
+
+- **Who the owner is.** Only the number in `owner_channel_identities` for that business, set on the server: `pnpm whatsapp owner you@example.com +447700900001` (and `owner-clear`). Never a guess from a name or the wording. With none set, every sender is a customer. Settings → WhatsApp says whether it's set up.
+- **Same pipeline, own rules.** Owner messages are stored, ordered and deduplicated like any other, then read by their own interpreter (`src/lib/ai/owner-interpreter.ts`, `owner_command_v1`, usage recorded as `interpret_owner_command`) and decided by `decideOwnerCommand` (`src/domain/owner/decide.ts`), which only ever sees this business's data. The model never changes anything.
+- **Changes.** A move, cancellation or block happens only when it's unambiguous and valid, through `complete_owner_command`, which checks the booking hasn't changed since, applies it with the same database functions as the app, writes the reply and completes the run in one transaction, once. Anything unclear gets one question; still unclear, "Please update it in Pingflow". Customers aren't messaged about changes, and the reply says so.
 
 ### Customers' own numbers
 
@@ -184,7 +193,8 @@ The end-to-end tests run Sarah's reschedule, the owner's answers to processed me
 ## Code layout
 
 - `src/domain/`: plain TypeScript rules with no I/O. The availability engine, time zones and formatting, the message policy (`messages/`: interpretation schema, dates, identity, replies, decisions), request planning, message templates, reminder policy, onboarding checks, what each line of work starts with (`onboarding/business-types.ts`), usage events and activity wording.
-- `src/lib/ai/`: the interpreters, their configuration, the prompt and model prices. Server-side only.
+- `src/domain/owner/`: owner commands: the command schema, the decisions and the replies.
+- `src/lib/ai/`: the interpreters, their configuration, the prompts and model prices. Server-side only.
 - `src/features/messages/`: the inbound message pipeline and the development simulator.
 - `src/domain/channel/`: channel rules with no provider in them: the 24-hour window, the send policy, template fields, delivery wording.
 - `src/lib/whatsapp/`, `src/lib/messaging/`: the WhatsApp Cloud API (transport, webhook parsing and signatures, errors, credentials). Server-side only.

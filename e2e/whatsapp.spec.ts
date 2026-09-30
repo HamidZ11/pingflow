@@ -126,6 +126,51 @@ test("Settings shows one honest WhatsApp state, and disconnecting works", async 
   await expect(section).toContainText("Not connected");
 });
 
+test("Settings says whether owner commands are set up", async ({
+  page,
+  baseURL,
+}, testInfo) => {
+  const email = `e2e-wa-owner-${testInfo.project.name}@pingflow.test`;
+  seedDemo(email);
+  const businessId = await businessIdFor(email);
+  await signIn(page, email, baseURL!);
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Attention" }),
+  ).toBeVisible();
+
+  // The demo names the owner's number; WhatsApp isn't connected yet.
+  await open(page, "/app/settings#whatsapp");
+  const card = page.getByRole("region", { name: "Owner commands" });
+  await expect(card).toContainText("Owner WhatsApp number");
+  await expect(card).toContainText("+44 7700 900001");
+  await expect(card).toContainText("This works once WhatsApp is connected.");
+  await expect(card.getByRole("button")).toHaveCount(0);
+  await noHorizontalScroll(page);
+
+  // Connected: no caveat.
+  await connect(
+    businessId,
+    `73${String(Date.now()).slice(-8)}${testInfo.project.name === "webkit" ? "2" : "1"}`,
+  );
+  await page.reload();
+  await expect(card).toContainText("+44 7700 900001");
+  await expect(card).not.toContainText(
+    "This works once WhatsApp is connected.",
+  );
+
+  // No owner number: said plainly. This is a production build, so no
+  // developer instructions and no setup button.
+  await adminClient()
+    .from("owner_channel_identities")
+    .delete()
+    .eq("business_id", businessId);
+  await page.reload();
+  await expect(card).toContainText("Not set up");
+  await expect(card).not.toContainText(/Developer|pnpm|\+44/);
+  await expect(card.getByRole("button")).toHaveCount(0);
+  await noHorizontalScroll(page);
+});
+
 test("Attention shows a voice note and a message WhatsApp couldn't take", async ({
   page,
   baseURL,

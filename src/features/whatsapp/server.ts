@@ -15,6 +15,7 @@ export function whatsAppServerDeps(): WhatsAppDeps {
   return createWhatsAppDeps({
     db: pipeline.db,
     interpreter: pipeline.interpreter,
+    ownerInterpreter: pipeline.ownerInterpreter,
     env: whatsAppEnv(),
     log: pipeline.log,
   });

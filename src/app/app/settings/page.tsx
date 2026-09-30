@@ -14,6 +14,10 @@ import {
   ScheduleForm,
   ServicesForm,
 } from "@/features/settings/settings-forms";
+import {
+  loadOwnerNumber,
+  OwnerCommandsCard,
+} from "@/features/whatsapp/owner-commands";
 import { loadWhatsAppSettings } from "@/features/whatsapp/settings-data";
 import { WhatsAppSettingsCard } from "@/features/whatsapp/whatsapp-settings";
 import { signOut } from "@/lib/auth/actions";
@@ -61,28 +65,30 @@ function Section({
 
 export default async function SettingsPage() {
   const owner = await requireOwner();
-  const [business, services, hours, automation, whatsapp] = await Promise.all([
-    owner.supabase
-      .from("businesses")
-      .select("name, business_type, schedule_mode")
-      .eq("id", owner.business.id)
-      .single(),
-    owner.supabase
-      .from("services")
-      // One query: each service with a count of its bookings still to come,
-      // so a service that can't be removed says so up front.
-      .select(
-        "id, name, duration_minutes, buffer_minutes, upcoming:bookings(count)",
-      )
-      .eq("business_id", owner.business.id)
-      .is("archived_at", null)
-      .eq("upcoming.status", "confirmed")
-      .gt("upcoming.ends_at", new Date().toISOString())
-      .order("position"),
-    loadWorkingHours(owner),
-    loadAutomation(owner),
-    loadWhatsAppSettings(owner),
-  ]);
+  const [business, services, hours, automation, whatsapp, ownerNumber] =
+    await Promise.all([
+      owner.supabase
+        .from("businesses")
+        .select("name, business_type, schedule_mode")
+        .eq("id", owner.business.id)
+        .single(),
+      owner.supabase
+        .from("services")
+        // One query: each service with a count of its bookings still to come,
+        // so a service that can't be removed says so up front.
+        .select(
+          "id, name, duration_minutes, buffer_minutes, upcoming:bookings(count)",
+        )
+        .eq("business_id", owner.business.id)
+        .is("archived_at", null)
+        .eq("upcoming.status", "confirmed")
+        .gt("upcoming.ends_at", new Date().toISOString())
+        .order("position"),
+      loadWorkingHours(owner),
+      loadAutomation(owner),
+      loadWhatsAppSettings(owner),
+      loadOwnerNumber(owner),
+    ]);
   if (business.error) throw business.error;
   if (services.error) throw services.error;
 
@@ -177,6 +183,14 @@ export default async function SettingsPage() {
         <Section id="whatsapp" title="WhatsApp">
           <WhatsAppSettingsCard
             settings={whatsapp}
+            developerHint={process.env.NODE_ENV === "development"}
+          />
+          <OwnerCommandsCard
+            number={ownerNumber}
+            connected={
+              whatsapp.state === "connected" ||
+              whatsapp.state === "needs_attention"
+            }
             developerHint={process.env.NODE_ENV === "development"}
           />
         </Section>

@@ -145,6 +145,8 @@ export function describeActivity(
   const delivery = event.messageDelivery ?? null;
   const simulated =
     delivery === "simulated" || (!delivery && d.delivery === "simulated");
+  // The owner made this change by messaging Pingflow on WhatsApp.
+  const viaWhatsApp = d.via === "whatsapp" ? ", from WhatsApp" : "";
 
   // What a request_understood entry records, by what was asked.
   const understood = (details: Record<string, unknown>): string => {
@@ -253,10 +255,12 @@ export function describeActivity(
     }
     case "booking_moved":
       return line(
-        `${whose} ${service} moved from ${at("from_starts_at")} to ${at("to_starts_at")}`,
+        `${whose} ${service} moved from ${at("from_starts_at")} to ${at("to_starts_at")}${viaWhatsApp}`,
       );
     case "booking_cancelled":
-      return line(`${whose} ${service} on ${at("starts_at")} was cancelled`);
+      return line(
+        `${whose} ${service} on ${at("starts_at")} was cancelled${viaWhatsApp}`,
+      );
     // Worded the same whatever happened; the delivery label says whether
     // it was sent, delivered, read or not sent.
     case "confirmation_sent":
@@ -301,7 +305,7 @@ export function describeActivity(
       const label = typeof d.label === "string" ? ` (${d.label})` : "";
       return line(
         starts && ends
-          ? `You blocked ${formatDateTimeRange(starts, ends, timeZone)}${label}`
+          ? `You blocked ${formatDateTimeRange(starts, ends, timeZone)}${label}${viaWhatsApp}`
           : "You blocked some time",
       );
     }

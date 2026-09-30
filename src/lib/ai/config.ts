@@ -5,6 +5,13 @@ import {
   UnavailableMessageInterpreter,
 } from "@/lib/ai/fixture-interpreter";
 import { OpenAIMessageInterpreter } from "@/lib/ai/openai-interpreter";
+import { ownerCorpus } from "@/domain/owner/fixtures/corpus";
+import {
+  FixtureOwnerInterpreter,
+  OpenAIOwnerInterpreter,
+  type OwnerCommandInterpreter,
+  UnavailableOwnerInterpreter,
+} from "@/lib/ai/owner-interpreter";
 
 // Which message interpreter runs, decided in one place.
 //
@@ -89,5 +96,26 @@ export function createMessageInterpreter(
       return new FixtureMessageInterpreter(corpus);
     case "none":
       return new UnavailableMessageInterpreter();
+  }
+}
+
+/** The owner-command reader, with the same settings as customer messages. */
+export function createOwnerInterpreter(
+  settings: AiSettings = aiSettings(),
+): OwnerCommandInterpreter {
+  switch (settings.interpreter) {
+    case "openai":
+      return new OpenAIOwnerInterpreter({
+        apiKey: process.env.OPENAI_API_KEY!,
+        model: settings.model,
+        reasoningEffort: settings.reasoningEffort,
+        timeoutMs: settings.timeoutMs,
+        maxRetries: settings.maxRetries,
+        maxOutputTokens: settings.maxOutputTokens,
+      });
+    case "fixture":
+      return new FixtureOwnerInterpreter(ownerCorpus);
+    case "none":
+      return new UnavailableOwnerInterpreter();
   }
 }

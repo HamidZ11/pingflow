@@ -166,7 +166,7 @@ export type Interpretation = z.infer<typeof interpretationSchema>;
 // that fails is treated as missing, never guessed at.
 // ---------------------------------------------------------------------------
 
-const clockPattern = /^([01]\d|2[0-3]):[0-5]\d$/;
+export const clockPattern = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 export type InterpretationIssue =
   | "invalid_requested_date"
@@ -174,7 +174,7 @@ export type InterpretationIssue =
   | "invalid_booking_reference"
   | "inconsistent_intent";
 
-function dateOk(ref: DateReference): boolean {
+export function dateOk(ref: DateReference): boolean {
   if (!ref) return true;
   if (ref.kind === "weekday") return ref.weekday !== null;
   if (ref.kind === "calendar_date") {
@@ -190,7 +190,7 @@ function dateOk(ref: DateReference): boolean {
   return true;
 }
 
-function timeOk(ref: TimeReference): boolean {
+export function timeOk(ref: TimeReference): boolean {
   if (!ref) return true;
   const needsTime = ["exact", "around", "before", "after"].includes(
     ref.constraint,

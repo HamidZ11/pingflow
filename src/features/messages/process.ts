@@ -1,6 +1,10 @@
 import "server-only";
 import type { PipelineDeps } from "@/features/messages/pipeline";
-import { aiSettings, createMessageInterpreter } from "@/lib/ai/config";
+import {
+  aiSettings,
+  createMessageInterpreter,
+  createOwnerInterpreter,
+} from "@/lib/ai/config";
 import { createServiceClient } from "@/lib/supabase/service";
 
 // The message pipeline as the server runs it: the secret-key client (no one
@@ -11,6 +15,7 @@ export function serverPipeline(): PipelineDeps {
   return {
     db: createServiceClient(),
     interpreter: createMessageInterpreter(aiSettings()),
+    ownerInterpreter: createOwnerInterpreter(aiSettings()),
     log: (event, fields) => {
       console.info(`[pingflow] ${event} ${JSON.stringify(fields)}`);
     },

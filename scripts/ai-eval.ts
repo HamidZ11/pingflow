@@ -3,6 +3,7 @@
 //
 //   pnpm ai:eval               every case (41), one call each
 //   pnpm ai:eval --limit 20    the first 20
+//   pnpm ai:eval --owner       the owner-command corpus instead
 //
 // It costs money, so it never runs in CI or the normal test suite and needs
 // OPENAI_API_KEY. Before sending anything it says what it will send. HTTP
@@ -12,9 +13,8 @@
 // Results go to results/ai-evals/ (git-ignored) as JSON. They hold the
 // synthetic corpus messages and readings, never keys or headers.
 
-import { execSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { corpus } from "@/domain/messages/fixtures/corpus";
 import {
@@ -30,6 +30,7 @@ import {
 } from "@/lib/ai/openai-interpreter";
 import { estimateCost, priceFor } from "@/lib/ai/pricing";
 import { PROMPT_VERSION } from "@/lib/ai/prompts/message-interpreter";
+import { dollars, git, percentile } from "./eval-shared";
 
 const MAX_CASES = 41;
 /** Stop early if the first few calls all fail at the provider. */
@@ -45,46 +46,6 @@ function limitArg(): number {
   }
   return Math.min(n, corpus.length, MAX_CASES);
 }
-
-/** Which code the run used: the commit, plus a hash of uncommitted work. */
-function git() {
-  const run = (cmd: string) => {
-    try {
-      return execSync(cmd, { encoding: "utf8", maxBuffer: 64 << 20 }).trim();
-    } catch {
-      return "";
-    }
-  };
-  const untracked = run("git ls-files --others --exclude-standard")
-    .split("\n")
-    .filter(Boolean);
-  const hash = createHash("sha256").update(run("git diff HEAD"));
-  for (const file of untracked) {
-    hash.update(file);
-    try {
-      hash.update(readFileSync(file));
-    } catch {
-      // Unreadable: its name is enough.
-    }
-  }
-  return {
-    commit: run("git rev-parse HEAD"),
-    branch: run("git branch --show-current"),
-    changedFiles: run("git status --porcelain").split("\n").filter(Boolean)
-      .length,
-    workingTree: hash.digest("hex").slice(0, 16),
-  };
-}
-
-/** Nearest-rank percentile of sorted values. */
-const percentile = (sorted: number[], p: number) =>
-  sorted.length
-    ? sorted[
-        Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1)
-      ]
-    : 0;
-
-const dollars = (micros: number) => `$${(micros / 1_000_000).toFixed(6)}`;
 
 type CaseRecord = {
   id: string;
@@ -433,7 +394,10 @@ async function main() {
   if (stopped) process.exit(2);
 }
 
-main().catch((error) => {
+(process.argv.includes("--owner")
+  ? import("./ai-eval-owner").then((m) => m.main())
+  : main()
+).catch((error) => {
   console.error(error instanceof Error ? error.message : error);
   process.exit(1);
 });

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { WhatsAppDeps } from "@/features/whatsapp/deps";
 import type { MessageInterpreter } from "@/lib/ai/interpreter";
+import type { OwnerCommandInterpreter } from "@/lib/ai/owner-interpreter";
 import type { Database } from "@/lib/supabase/database.types";
 import { WhatsAppCloudTransport } from "@/lib/whatsapp/cloud-transport";
 import type { WhatsAppEnv } from "@/lib/whatsapp/config";
@@ -11,6 +12,7 @@ import { EnvironmentWhatsAppCredentialProvider } from "@/lib/whatsapp/credential
 export function createWhatsAppDeps(input: {
   db: SupabaseClient<Database>;
   interpreter: MessageInterpreter;
+  ownerInterpreter?: OwnerCommandInterpreter;
   env: WhatsAppEnv;
   log?: WhatsAppDeps["log"];
 }): WhatsAppDeps {
@@ -25,6 +27,7 @@ export function createWhatsAppDeps(input: {
     pipeline: {
       db: input.db,
       interpreter: input.interpreter,
+      ownerInterpreter: input.ownerInterpreter,
       log: input.log,
     },
     log: input.log,

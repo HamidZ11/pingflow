@@ -42,6 +42,9 @@ import {
 } from "@/domain/time/zoned";
 import type { Database } from "@/lib/supabase/database.types";
 
+/** The demo owner's own WhatsApp number (synthetic). */
+const DEMO_OWNER_PHONE = "+447700900001";
+
 const tz = DEFAULT_TIME_ZONE;
 const args = process.argv.slice(2);
 const allowRemote = args.includes("--allow-remote");
@@ -522,12 +525,32 @@ async function seed() {
   }
   const proposal = { startsAt: new Date(report.decision.approval.proposal) };
 
+  // The owner's own number, for owner commands in the simulator. A drama
+  // number (07700 900xxx is never a real line); a real owner number is set
+  // with `pnpm whatsapp owner`.
+  await must(
+    db
+      .from("owner_channel_identities")
+      .upsert(
+        {
+          business_id: businessId,
+          channel: "whatsapp",
+          address_e164: DEMO_OWNER_PHONE,
+        },
+        { onConflict: "business_id,channel" },
+      )
+      .select("business_id")
+      .single(),
+    "Setting the owner's number",
+  );
+
   console.log(`
   Demo ready for ${email} (${scheduleMode} hours)
     Sarah's lesson   ${formatDate(sarahDay)} 16:00
     She asked for    ${formatDate(requestedDay)} after 16:00
     Proposed         ${formatDate(requestedDay)} ${formatTime(proposal.startsAt, tz)}
     Bookings         ${bookingRows.length} across ${horizonDays} days from ${formatDate(firstDay)}
+    Owner number     ${DEMO_OWNER_PHONE} (owner commands, in the simulator)
   Sign in at /sign-in with that email.
 `);
 }

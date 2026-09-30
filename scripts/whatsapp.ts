@@ -9,6 +9,9 @@
 //   pnpm whatsapp templates-sync <email>   refresh template review status
 //   pnpm whatsapp simulate <email> "text" [--from +447700900123] [--url http://localhost:3000]
 //                                          post a signed Meta-shaped webhook
+//   pnpm whatsapp owner <email> <number>   the owner's own WhatsApp number:
+//                                          messages from it are owner commands
+//   pnpm whatsapp owner-clear <email>
 //
 // Only against the local Supabase unless --allow-remote is passed.
 
@@ -18,7 +21,11 @@ import { internationalDigits, parsePhone } from "@/domain/contacts/phone";
 import { templateFields } from "@/domain/channel/templates";
 import { createWhatsAppDeps } from "@/features/whatsapp/factory";
 import { runWhatsAppWork } from "@/features/whatsapp/worker";
-import { aiSettings, createMessageInterpreter } from "@/lib/ai/config";
+import {
+  aiSettings,
+  createMessageInterpreter,
+  createOwnerInterpreter,
+} from "@/lib/ai/config";
 import type { Database } from "@/lib/supabase/database.types";
 import { WhatsAppCloudTransport } from "@/lib/whatsapp/cloud-transport";
 import { whatsAppEnv } from "@/lib/whatsapp/config";
@@ -182,6 +189,7 @@ async function work() {
   const deps = createWhatsAppDeps({
     db,
     interpreter: createMessageInterpreter(aiSettings()),
+    ownerInterpreter: createOwnerInterpreter(aiSettings()),
     env,
     log: (event, fields) => console.log(`  ${event} ${JSON.stringify(fields)}`),
   });
@@ -328,6 +336,46 @@ async function simulate(email?: string, text?: string) {
   console.log(`  ${target} answered ${response.status}.`);
 }
 
+/** Names the owner's own number: its messages become owner commands. */
+async function owner(email?: string, number?: string) {
+  const business = await businessFor(email);
+  const phone = number ? parsePhone(number) : null;
+  if (!phone) fail("Give the owner's WhatsApp number, e.g. +447700900001.");
+  const { data: customer } = await db
+    .from("contacts")
+    .select("id, customer_contacts ( customer_id )")
+    .eq("business_id", business.id)
+    .eq("phone_e164", phone)
+    .maybeSingle();
+  const { error } = await db
+    .from("owner_channel_identities")
+    .upsert(
+      { business_id: business.id, channel: "whatsapp", address_e164: phone },
+      { onConflict: "business_id,channel" },
+    );
+  if (error) fail(error.message);
+  console.log(
+    `  Owner number set. Messages from it are now owner commands${
+      customer?.customer_contacts?.length
+        ? " (it's also a customer's number; the owner comes first)"
+        : ""
+    }.`,
+  );
+}
+
+async function ownerClear(email?: string) {
+  const business = await businessFor(email);
+  const { error } = await db
+    .from("owner_channel_identities")
+    .delete()
+    .eq("business_id", business.id)
+    .eq("channel", "whatsapp");
+  if (error) fail(error.message);
+  console.log(
+    "  Owner number removed. Its messages are treated like anyone else's.",
+  );
+}
+
 const commands: Record<string, (...a: string[]) => Promise<void>> = {
   connect,
   disconnect,
@@ -336,6 +384,8 @@ const commands: Record<string, (...a: string[]) => Promise<void>> = {
   template,
   "templates-sync": templatesSync,
   simulate,
+  owner,
+  "owner-clear": ownerClear,
 };
 
 const run = command ? commands[command] : undefined;

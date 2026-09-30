@@ -21,10 +21,12 @@ import {
   loadAutomationFor,
   loadScheduleContext,
 } from "@/features/schedule/load-schedule";
+import { processOwnerRun } from "@/features/messages/owner";
 import type {
   InterpreterResult,
   MessageInterpreter,
 } from "@/lib/ai/interpreter";
+import type { OwnerCommandInterpreter } from "@/lib/ai/owner-interpreter";
 import { estimateCost } from "@/lib/ai/pricing";
 import type { Database, Json } from "@/lib/supabase/database.types";
 import { writeUsage } from "@/lib/usage/ledger";
@@ -51,6 +53,8 @@ export type PipelineDeps = {
   /** The server's client (secret key). */
   db: Db;
   interpreter: MessageInterpreter;
+  /** Reads the owner's own commands (owner.ts). Without it they're refused. */
+  ownerInterpreter?: OwnerCommandInterpreter;
   /** Trace logging: IDs and outcomes only, never message text. */
   log?: (event: string, fields: Record<string, unknown>) => void;
 };
@@ -98,6 +102,15 @@ export type ProcessingReport = {
   };
   created?: { pendingActionId?: string; replyMessageId?: string };
   usage?: UsageReport | null;
+  /** Set when the sender was the business's owner (owner.ts). */
+  owner?: {
+    intent: string | null;
+    outcome: string;
+    reason: string;
+    reply: string | null;
+    /** What happened to a change: changed, conflict or stale. */
+    applied: string | null;
+  };
 };
 
 const MAX_RUNS_PER_DRAIN = 10;
@@ -248,6 +261,10 @@ async function processClaimedRun(
 ): Promise<ProcessingReport> {
   const { db } = deps;
   const context = await loadRunContext(db, runId);
+  // The owner's own commands take their own path from here.
+  if (context.fromOwner) {
+    return processOwnerRun(deps, context, runId, attempt);
+  }
   const { message, business, links, conversation } = context;
   const receivedAt = new Date(message.sent_at);
   const today = dateKeyOf(receivedAt, business.timeZone);
@@ -552,13 +569,15 @@ async function processClaimedRun(
 // Loading
 // ---------------------------------------------------------------------------
 
+export type RunContext = Awaited<ReturnType<typeof loadRunContext>>;
+
 async function loadRunContext(db: Db, runId: string) {
   const { data: run, error } = await db
     .from("message_processing_runs")
     .select(
       `id, business_id, message_id, conversation_id,
        message:messages!message_processing_runs_business_id_message_id_fkey ( id, body, sent_at, content_type ),
-       conversation:conversations ( id, contact_id, clarification, automation_paused_at )`,
+       conversation:conversations ( id, contact_id, clarification, automation_paused_at, contact:contacts ( phone_e164 ) )`,
     )
     .eq("id", runId)
     .single();
@@ -566,24 +585,32 @@ async function loadRunContext(db: Db, runId: string) {
     throw new PipelineError(error?.message ?? "Run not found");
   }
 
-  const [businessResult, servicesResult, linksResult] = await Promise.all([
-    db
-      .from("businesses")
-      .select("id, business_type, timezone, schedule_mode")
-      .eq("id", run.business_id)
-      .single(),
-    db
-      .from("services")
-      .select("id, name, duration_minutes, buffer_minutes")
-      .eq("business_id", run.business_id)
-      .is("archived_at", null)
-      .order("position"),
-    db
-      .from("customer_contacts")
-      .select("relationship, customer:customers ( id, full_name )")
-      .eq("business_id", run.business_id)
-      .eq("contact_id", run.conversation.contact_id),
-  ]);
+  const [businessResult, servicesResult, linksResult, ownerResult] =
+    await Promise.all([
+      db
+        .from("businesses")
+        .select("id, business_type, timezone, schedule_mode")
+        .eq("id", run.business_id)
+        .single(),
+      db
+        .from("services")
+        .select("id, name, duration_minutes, buffer_minutes")
+        .eq("business_id", run.business_id)
+        .is("archived_at", null)
+        .order("position"),
+      db
+        .from("customer_contacts")
+        .select("relationship, customer:customers ( id, full_name )")
+        .eq("business_id", run.business_id)
+        .eq("contact_id", run.conversation.contact_id),
+      db
+        .from("owner_channel_identities")
+        .select("address_e164")
+        .eq("business_id", run.business_id)
+        .eq("channel", "whatsapp")
+        .maybeSingle(),
+    ]);
+  if (ownerResult.error) throw ownerResult.error;
   if (businessResult.error) throw businessResult.error;
   if (servicesResult.error) throw servicesResult.error;
 
@@ -610,6 +637,13 @@ async function loadRunContext(db: Db, runId: string) {
     }))
     .sort((a, b) => a.fullName.localeCompare(b.fullName));
 
+  // The owner is whoever the business has named as its owner's number:
+  // never inferred from names or wording.
+  const senderPhone = run.conversation.contact?.phone_e164 ?? null;
+  const fromOwner = Boolean(
+    senderPhone && ownerResult.data?.address_e164 === senderPhone,
+  );
+
   return {
     run,
     message: run.message,
@@ -617,6 +651,7 @@ async function loadRunContext(db: Db, runId: string) {
     business,
     services,
     links,
+    fromOwner,
   };
 }
 
@@ -669,10 +704,12 @@ function readClarification(value: Json | null): PendingClarification | null {
   if (typeof v.question !== "string" || typeof v.messageId !== "string") {
     return null;
   }
+  // An owner's open question isn't a customer's.
+  if (v.kind === "owner") return null;
   return value as unknown as PendingClarification;
 }
 
-async function originalMessageText(db: Db, messageId: string) {
+export async function originalMessageText(db: Db, messageId: string) {
   const { data, error } = await db
     .from("messages")
     .select("body")
@@ -709,12 +746,16 @@ async function complete(
   };
 }
 
-async function recordUsage(
+export async function recordUsage(
   deps: PipelineDeps,
   businessId: string,
   messageId: string,
   runId: string,
-  result: InterpreterResult,
+  result: Pick<InterpreterResult, "usage" | "promptVersion" | "ok"> & {
+    failure?: string;
+  },
+  operation:
+    "interpret_message" | "interpret_owner_command" = "interpret_message",
 ): Promise<UsageReport | null> {
   if (!result.usage) return null;
   const u = result.usage;
@@ -734,7 +775,7 @@ async function recordUsage(
       aiUsage({
         businessId,
         provider: "openai",
-        operation: "interpret_message",
+        operation,
         model: u.model,
         inputTokens: u.inputTokens,
         outputTokens: u.outputTokens,
@@ -747,7 +788,7 @@ async function recordUsage(
           provider_request_id: u.requestId,
           message_id: messageId,
           run_id: runId,
-          outcome: result.ok ? "interpreted" : result.failure,
+          outcome: result.ok ? "interpreted" : (result.failure ?? "failed"),
         },
       }),
     );
@@ -774,8 +815,14 @@ async function storedReport(db: Db, runId: string): Promise<ProcessingReport> {
     .single();
   const detail = (data?.decision_detail ?? {}) as {
     reason?: string;
-    created?: { pending_action_id?: string; reply_message_id?: string };
+    sender?: string;
+    created?: {
+      pending_action_id?: string;
+      reply_message_id?: string;
+      outcome?: string;
+    };
   };
+  const fromOwner = detail.sender === "owner";
   return {
     messageId: data?.message_id ?? "",
     runId,
@@ -784,7 +831,10 @@ async function storedReport(db: Db, runId: string): Promise<ProcessingReport> {
     interpreter: data?.interpreter ?? null,
     model: data?.model ?? null,
     promptVersion: data?.prompt_version ?? null,
-    interpretation: (data?.interpretation as Interpretation | null) ?? null,
+    // An owner's command isn't a customer reading.
+    interpretation: fromOwner
+      ? null
+      : ((data?.interpretation as Interpretation | null) ?? null),
     failure: data?.error_category ?? undefined,
     created: detail.created
       ? {
@@ -792,5 +842,32 @@ async function storedReport(db: Db, runId: string): Promise<ProcessingReport> {
           replyMessageId: detail.created.reply_message_id,
         }
       : undefined,
+    ...(fromOwner && data
+      ? { owner: await storedOwnerReport(db, data, detail) }
+      : {}),
+  };
+}
+
+/** The owner's side of a finished run, as it was first reported. */
+async function storedOwnerReport(
+  db: Db,
+  run: { interpretation: unknown; decision: string | null },
+  detail: {
+    reason?: string;
+    created?: { reply_message_id?: string; outcome?: string };
+  },
+): Promise<NonNullable<ProcessingReport["owner"]>> {
+  const replyId = detail.created?.reply_message_id;
+  const { data: reply } = replyId
+    ? await db.from("messages").select("body").eq("id", replyId).maybeSingle()
+    : { data: null };
+  const outcome = detail.created?.outcome;
+  const command = run.interpretation as { intent?: string } | null;
+  return {
+    intent: command?.intent ?? null,
+    outcome: (run.decision ?? "").replace(/^owner_/, ""),
+    reason: detail.reason ?? "",
+    reply: reply?.body ?? null,
+    applied: outcome && outcome !== "answered" ? outcome : null,
   };
 }

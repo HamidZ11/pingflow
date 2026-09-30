@@ -23,6 +23,8 @@ import { cx } from "@/lib/cx";
 // pipeline and shows everything it did, internals included.
 
 const OTHER = "other";
+/** Stands for whichever number is set up as the owner's. */
+const OWNER = "owner";
 const UNKNOWN_NUMBER = "+447700900111";
 
 // Messages the fixture interpreter knows (the evaluation corpus), grouped
@@ -61,6 +63,13 @@ const samples = [
   },
   { flow: "Parent", text: "When is Adam booked?", from: "+447700900567" },
   { flow: "Parent", text: "When is the lesson?", from: "+447700900567" },
+  // The owner's own commands (sent from the owner's number).
+  { flow: "Owner", text: "Who have I got tomorrow?", from: OWNER },
+  { flow: "Owner", text: "When is Sarah booked?", from: OWNER },
+  { flow: "Owner", text: "am i free friday at 5", from: OWNER },
+  { flow: "Owner", text: "How many lessons have I got tomorrow?", from: OWNER },
+  { flow: "Owner", text: "Move Sarah Friday", from: OWNER },
+  { flow: "Owner", text: "Block Thursday afternoon", from: OWNER },
 ];
 
 const outcomes: Record<string, string> = {
@@ -109,8 +118,14 @@ export function Simulator({ data }: { data: SimulatorData }) {
     });
   }
 
+  const ownerSender = data.senders.find((s) => s.owner)?.phone ?? null;
+
   function pickSample(sample: (typeof samples)[number]) {
     setBody(sample.text);
+    if (sample.from === OWNER) {
+      if (ownerSender) setSender(ownerSender);
+      return;
+    }
     if (known.has(sample.from)) setSender(sample.from);
     else {
       setSender(OTHER);
@@ -221,7 +236,7 @@ export function Simulator({ data }: { data: SimulatorData }) {
         </p>
         <ul className="mt-3 flex flex-wrap gap-2">
           {samples.map((sample) => (
-            <li key={sample.text}>
+            <li key={`${sample.flow}:${sample.text}`}>
               <button
                 type="button"
                 onClick={() => pickSample(sample)}
@@ -253,6 +268,7 @@ function ResultPanel({ result }: { result: SimulationResult }) {
     );
   }
   const r = result.report;
+  if (r.owner) return <OwnerResult report={r} />;
   const decision = r.decision;
   const headline = r.duplicate
     ? "Seen before: nothing was done again"
@@ -402,6 +418,76 @@ function RecentRuns({
           ))}
         </ol>
       )}
+    </section>
+  );
+}
+
+const ownerOutcomes: Record<string, string> = {
+  answer: "Owner command: answered",
+  clarify: "Owner command: asked one question",
+  change: "Owner command: changed",
+  refuse: "Owner command: nothing changed",
+  no_action: "Owner command: nothing to do",
+};
+
+function OwnerResult({
+  report,
+}: {
+  report: Extract<SimulationResult, { ok: true }>["report"];
+}) {
+  const o = report.owner!;
+  const headline = report.duplicate
+    ? "Seen before: nothing was done again"
+    : o.applied === "conflict" || o.applied === "stale"
+      ? "Owner command: the change couldn’t be made"
+      : (ownerOutcomes[o.outcome] ?? o.outcome);
+  const rows: [string, string | null | undefined][] = [
+    ["Run", report.runId],
+    ["Interpreter", report.interpreter],
+    ["Model", report.model],
+    ["Prompt", report.promptVersion],
+    ["Intent", o.intent],
+    ["Decision", `${o.outcome} (${o.reason})`],
+    ["Change", o.applied],
+  ];
+  return (
+    <section
+      aria-live="polite"
+      aria-labelledby="simulation-result"
+      className="rounded-lg border border-line bg-surface p-4 sm:p-5"
+    >
+      <h2 id="simulation-result" className="text-body font-semibold text-ink">
+        {headline}
+      </h2>
+      {o.reply && (
+        <div className="mt-3 flex justify-end rounded-md bg-chat p-3">
+          <p className="max-w-[92%] rounded-md rounded-tr-xs bg-bubble-out px-3 py-2 text-ui whitespace-pre-line text-ink">
+            {o.reply}
+          </p>
+        </div>
+      )}
+      <dl className="mt-4 grid grid-cols-[7.5rem_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-ui">
+        {rows
+          .filter(([, value]) => value)
+          .map(([label, value]) => (
+            <div key={label} className="contents">
+              <dt className="text-ink-3">{label}</dt>
+              <dd className="break-words text-ink">{value}</dd>
+            </div>
+          ))}
+        {report.usage && (
+          <>
+            <dt className="text-ink-3">Usage</dt>
+            <dd className="text-ink tabular-nums">
+              {report.usage.inputTokens} in ({report.usage.cachedInputTokens}{" "}
+              cached) · {report.usage.outputTokens} out ·{" "}
+              {report.usage.estimatedCostMicros === null
+                ? "no price listed"
+                : `${report.usage.currency} ${(report.usage.estimatedCostMicros / 1e6).toFixed(6)}`}
+            </dd>
+          </>
+        )}
+      </dl>
     </section>
   );
 }

@@ -252,7 +252,7 @@ test("nothing about the model, WhatsApp credentials or their keys reaches the br
   for (const file of files) {
     const text = readFileSync(file, "utf8");
     expect(text, file).not.toMatch(
-      /OPENAI_API_KEY|api\.openai\.com|SUPABASE_SECRET_KEY|message_interpreter_v1|WHATSAPP_ACCESS_TOKEN|META_APP_SECRET|WHATSAPP_VERIFY_TOKEN|WHATSAPP_WORKER_SECRET|graph\.facebook\.com/,
+      /OPENAI_API_KEY|api\.openai\.com|SUPABASE_SECRET_KEY|message_interpreter_v1|owner_command_v1|WHATSAPP_ACCESS_TOKEN|META_APP_SECRET|WHATSAPP_VERIFY_TOKEN|WHATSAPP_WORKER_SECRET|graph\.facebook\.com/,
     );
   }
 

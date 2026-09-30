@@ -697,6 +697,38 @@ export type Database = {
           },
         ];
       };
+      owner_channel_identities: {
+        Row: {
+          address_e164: string;
+          business_id: string;
+          channel: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          address_e164: string;
+          business_id: string;
+          channel?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          address_e164?: string;
+          business_id?: string;
+          channel?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "owner_channel_identities_business_id_fkey";
+            columns: ["business_id"];
+            isOneToOne: false;
+            referencedRelation: "businesses";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       pending_actions: {
         Row: {
           booking_id: string | null;
@@ -1281,6 +1313,10 @@ export type Database = {
         Returns: Json;
       };
       complete_onboarding: { Args: { p_setup: Json }; Returns: string };
+      complete_owner_command: {
+        Args: { p_attempt: number; p_result: Json; p_run_id: string };
+        Returns: Json;
+      };
       create_booking: {
         Args: {
           p_customer_id: string;

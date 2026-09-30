@@ -100,4 +100,39 @@ describe("activity for inbound messages", () => {
       ).text,
     ).toBe("Pingflow wasn’t sure what Sarah Khan meant and left it for you");
   });
+
+  it("says when the owner made a change from WhatsApp", () => {
+    const moved = describeActivity(
+      event({
+        kind: "booking_moved",
+        actor: "owner",
+        serviceName: "Driving lesson",
+        details: {
+          from_starts_at: zonedInstant("2026-09-29", "16:00", tz).toISOString(),
+          to_starts_at: zonedInstant("2026-10-02", "17:00", tz).toISOString(),
+          via: "whatsapp",
+        },
+      }),
+      tz,
+    );
+    expect(moved.text).toBe(
+      "Sarah Khan’s driving lesson moved from Tue 29 Sep, 16:00 to Fri 2 Oct, 17:00, from WhatsApp",
+    );
+    const blocked = describeActivity(
+      event({
+        kind: "time_blocked",
+        actor: "owner",
+        customerName: null,
+        details: {
+          starts_at: zonedInstant("2026-10-01", "12:00", tz).toISOString(),
+          ends_at: zonedInstant("2026-10-01", "17:00", tz).toISOString(),
+          via: "whatsapp",
+        },
+      }),
+      tz,
+    );
+    expect(blocked.text).toBe(
+      "You blocked Thu 1 Oct, 12:00–17:00, from WhatsApp",
+    );
+  });
 });

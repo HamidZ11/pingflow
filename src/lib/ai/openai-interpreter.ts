@@ -7,9 +7,9 @@ import {
 import type {
   InterpreterRequest,
   InterpreterResult,
-  InterpreterUsage,
   MessageInterpreter,
 } from "@/lib/ai/interpreter";
+import { callStructured, createOpenAIClient } from "@/lib/ai/openai-structured";
 import {
   buildInput,
   INSTRUCTIONS,
@@ -18,9 +18,7 @@ import {
 
 // Message interpretation with OpenAI: one small Responses API call per
 // message, answered in a strict JSON Schema (Structured Outputs), then
-// validated again here. A 200 response isn't taken as success on its own:
-// refusals, incomplete answers and anything that doesn't validate are
-// failures, and failures are never guessed around.
+// validated again here (see openai-structured.ts for the call itself).
 
 export type OpenAIInterpreterOptions = {
   apiKey: string;
@@ -52,14 +50,7 @@ export class OpenAIMessageInterpreter implements MessageInterpreter {
 
   constructor(private readonly options: OpenAIInterpreterOptions) {
     this.model = options.model;
-    this.client =
-      options.client ??
-      new OpenAI({
-        apiKey: options.apiKey,
-        timeout: options.timeoutMs,
-        maxRetries: options.maxRetries,
-        ...(options.fetch ? { fetch: options.fetch } : {}),
-      });
+    this.client = options.client ?? createOpenAIClient(options);
   }
 
   async interpret(request: InterpreterRequest): Promise<InterpreterResult> {
@@ -68,86 +59,36 @@ export class OpenAIMessageInterpreter implements MessageInterpreter {
       model: this.model,
       promptVersion: PROMPT_VERSION,
     };
-    let usage: InterpreterUsage | null = null;
-
-    try {
-      const response = await this.client.responses.parse({
-        model: this.model,
+    const result = await callStructured(
+      this.client,
+      this.options,
+      {
+        format,
         instructions: INSTRUCTIONS,
-        input: buildInput(request),
-        text: { format },
-        // Nothing about the conversation is kept on the provider's side.
-        store: false,
-        max_output_tokens: this.options.maxOutputTokens,
-        ...(this.options.reasoningEffort
-          ? { reasoning: { effort: this.options.reasoningEffort } }
-          : {}),
-      });
-
-      if (response.usage) {
-        usage = {
-          model: response.model ?? this.model,
-          inputTokens: response.usage.input_tokens,
-          cachedInputTokens:
-            response.usage.input_tokens_details?.cached_tokens ?? 0,
-          outputTokens: response.usage.output_tokens,
-          responseId: response.id ?? null,
-          requestId:
-            (response as { _request_id?: string | null })._request_id ?? null,
-        };
-      }
-
-      if (response.status === "incomplete") {
-        return {
-          ...common,
-          ok: false,
-          failure: "incomplete",
-          usage,
-          detail: response.incomplete_details?.reason ?? undefined,
-        };
-      }
-      const refused = response.output.some(
-        (item) =>
-          item.type === "message" &&
-          item.content.some((part) => part.type === "refusal"),
-      );
-      if (refused) return { ...common, ok: false, failure: "refused", usage };
-
-      const checked = checkInterpretation(response.output_parsed);
-      if (!checked) {
-        return { ...common, ok: false, failure: "invalid_output", usage };
-      }
+        check: (parsed) => {
+          const checked = checkInterpretation(parsed);
+          return checked
+            ? { value: checked.interpretation, issues: checked.issues }
+            : null;
+        },
+      },
+      buildInput(request),
+    );
+    if (!result.ok) {
       return {
         ...common,
-        ok: true,
-        usage,
-        interpretation: checked.interpretation,
-        issues: checked.issues,
+        ok: false,
+        failure: result.failure,
+        usage: result.usage,
+        ...(result.detail ? { detail: result.detail } : {}),
       };
-    } catch (error) {
-      return { ...common, ok: false, usage, ...classify(error) };
     }
-  }
-}
-
-function classify(error: unknown): {
-  failure: "timeout" | "rate_limited" | "unavailable" | "invalid_output";
-  detail: string;
-} {
-  if (error instanceof OpenAI.APIConnectionTimeoutError) {
-    return { failure: "timeout", detail: "timed out" };
-  }
-  if (error instanceof OpenAI.RateLimitError) {
-    return { failure: "rate_limited", detail: "rate limited" };
-  }
-  if (error instanceof OpenAI.APIError) {
-    // Authentication, permission and request errors are configuration
-    // problems; the status is enough to diagnose them. Never the key.
     return {
-      failure: "unavailable",
-      detail: `provider error ${error.status ?? "connection"}`,
+      ...common,
+      ok: true,
+      usage: result.usage,
+      interpretation: result.value,
+      issues: result.issues,
     };
   }
-  // The structured output didn't match the schema.
-  return { failure: "invalid_output", detail: "output did not validate" };
 }

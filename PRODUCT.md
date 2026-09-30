@@ -225,6 +225,8 @@ These are natural-language intents, not slash commands.
 
 Schedule commands read and update Pingflow's own schedule. The owner should be able to run their day without opening a dashboard.
 
+Built so far: what's on, when a customer is booked, whether a time is free, how many bookings, moving and cancelling a booking, and blocking time. Only the number the business has set as the owner's can use them. A change happens only when it is unambiguous and valid; otherwise Pingflow asks one question, then hands back to the app. Customers are not messaged about owner changes, and the reply says so. Messages that need the owner, and reminding customers, are not built yet.
+
 ---
 
 # MVP customer intents

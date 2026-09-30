@@ -10,7 +10,7 @@ import { createServiceClient } from "@/lib/supabase/service";
 // Runs are internal, so they're read with the server's client, scoped to
 // the signed-in owner's business.
 
-export type SimulatorSender = { phone: string; label: string };
+export type SimulatorSender = { phone: string; label: string; owner?: boolean };
 
 export type SimulatorRun = {
   id: string;
@@ -50,30 +50,53 @@ export async function loadSimulator(owner: Owner): Promise<SimulatorData> {
     .order("display_name");
   if (error) throw error;
 
-  const senders = contacts.map((c) => {
-    const phone = formatPhone(c.phone_e164);
-    const people = (c.links ?? [])
-      .map((l) => l.customer?.full_name.split(" ")[0])
-      .filter((n): n is string => Boolean(n))
-      .sort();
-    if (!c.display_name) {
+  // The owner's own number first: messages from it are owner commands.
+  const { data: ownerIdentity } = await owner.supabase
+    .from("owner_channel_identities")
+    .select("address_e164")
+    .eq("business_id", owner.business.id)
+    .eq("channel", "whatsapp")
+    .maybeSingle();
+  const ownerPhone = ownerIdentity?.address_e164 ?? null;
+
+  const customerSenders = contacts
+    .filter((c) => c.phone_e164 !== ownerPhone)
+    .map((c) => {
+      const phone = formatPhone(c.phone_e164);
+      const people = (c.links ?? [])
+        .map((l) => l.customer?.full_name.split(" ")[0])
+        .filter((n): n is string => Boolean(n))
+        .sort();
+      if (!c.display_name) {
+        return {
+          phone: c.phone_e164,
+          label: people.length
+            ? `${phone} (for ${people.join(" and ")})`
+            : `${phone} (not a customer)`,
+        };
+      }
+      const forWhom =
+        people.length > 1 ||
+        (people.length === 1 && !c.display_name.startsWith(people[0]))
+          ? ` (for ${people.join(" and ")})`
+          : "";
       return {
         phone: c.phone_e164,
-        label: people.length
-          ? `${phone} (for ${people.join(" and ")})`
-          : `${phone} (not a customer)`,
+        label: `${c.display_name}${forWhom} · ${phone}`,
       };
-    }
-    const forWhom =
-      people.length > 1 ||
-      (people.length === 1 && !c.display_name.startsWith(people[0]))
-        ? ` (for ${people.join(" and ")})`
-        : "";
-    return {
-      phone: c.phone_e164,
-      label: `${c.display_name}${forWhom} · ${phone}`,
-    };
-  });
+    });
+  const senders = [
+    ...(ownerPhone
+      ? [
+          {
+            phone: ownerPhone,
+            label: `You, the owner · ${formatPhone(ownerPhone)}`,
+            owner: true,
+          },
+        ]
+      : []),
+    ...customerSenders,
+  ];
 
   const { data: runs, error: runsError } = await createServiceClient()
     .from("message_processing_runs")
