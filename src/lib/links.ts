@@ -1,4 +1,4 @@
-// Onboarding and sign-in are not built yet; these are where they will live.
+// /start sends visitors on to sign in, onboarding or the app, as appropriate.
 export const startFreeHref = "/start";
 export const signInHref = "/sign-in";
 

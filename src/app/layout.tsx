@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from "next";
 import { Instrument_Sans } from "next/font/google";
-import { SiteHeader } from "@/components/site-header";
 import "./globals.css";
 
 const instrumentSans = Instrument_Sans({
@@ -25,10 +24,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en-GB" className={instrumentSans.variable}>
-      <body>
-        <SiteHeader />
-        {children}
-      </body>
+      <body>{children}</body>
     </html>
   );
 }

@@ -54,7 +54,6 @@ export function MobileMenu() {
           <li className="mt-1 border-t border-line pt-1">
             <NavLink
               href={signInHref}
-              prefetch={false}
               className={rowClassName}
               activeClassName="bg-sunken font-medium"
               onClick={close}

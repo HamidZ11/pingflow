@@ -198,6 +198,14 @@ The product should not require customers to:
 - learn commands;
 - change phone numbers.
 
+## Connecting an existing number (Meta's rules, checked September 2026)
+
+- Keeping the existing number and the WhatsApp Business app is Meta's "coexistence" onboarding: the owner keeps using the app (version 2.24.17 or later) while Pingflow uses the Cloud API on the same number. Up to six months of chats and the contacts sync.
+- It needs Pingflow to be a Meta Tech Provider using Embedded Signup, with App Review for WhatsApp messaging and management. Until then only a developer number can be connected.
+- On a coexistence number WhatsApp turns off group sync, broadcast lists, disappearing and view-once messages and live location, and unlinks the Windows and Wear OS apps. Messages the owner sends from the app stay free; Pingflow's are charged at Meta's rates.
+- More than 24 hours after a customer's last message, WhatsApp only allows approved templates. Reminders and late confirmations need one; without it Pingflow says it couldn't send.
+- Copy must not promise one-click setup or that nothing changes in the app.
+
 ## Owner-facing WhatsApp
 
 The owner can also interact with Pingflow conversationally.
@@ -216,6 +224,8 @@ Example commands:
 These are natural-language intents, not slash commands.
 
 Schedule commands read and update Pingflow's own schedule. The owner should be able to run their day without opening a dashboard.
+
+Built so far: what's on, when a customer is booked, whether a time is free, how many bookings, moving and cancelling a booking, and blocking time. Only the number the business has set as the owner's can use them. A change happens only when it is unambiguous and valid; otherwise Pingflow asks one question, then hands back to the app. Customers are not messaged about owner changes, and the reply says so. Messages that need the owner, and reminding customers, are not built yet.
 
 ---
 
@@ -304,6 +314,23 @@ Pingflow must never silently choose an interpretation that changes a booking.
 
 ---
 
+# Message policy (locked)
+
+How Pingflow handles an inbound message. AI reads the words; deterministic code decides everything else.
+
+- AI only interprets: what the customer wants, dates and times as they said them, and who and which booking they seem to mean. It never decides identity, availability, permissions or approval, and never changes a booking.
+- Automatic, only for a customer recognised by their number and only when the matching automation is on: when their next booking is; what's free (up to three real times from the schedule); acknowledging a cancellation request. Fixed templates with checked data.
+- Always owner approval: new bookings, reschedules and cancellations. Pingflow proposes a real free time where there is one.
+- Unclear: one clarifying question, then the owner. If the answer still isn't clear, the customer is told once that it's been passed on.
+- A follow-up that changes a request still waiting ("actually 6 would be better") replaces it; the owner only ever sees the latest version. The owner's own change to that booking, or booking that customer themselves, closes the request.
+- Unknown numbers learn nothing private. An availability question from one becomes a draft for the owner.
+- A parent or carer linked to several customers names the person, or is asked once.
+- Free-form replies are drafts the owner sends.
+- A message Pingflow can't read is kept, nothing is sent, and the owner gets it.
+- Owners see "Pingflow understood" and "Pingflow isn't sure what they meant", never model details.
+
+---
+
 # Manual takeover
 
 Manual owner activity overrides automation.
@@ -334,6 +361,17 @@ For MVP:
 - Pingflow records the structured booking/customer state required for reminders and workflows.
 
 Availability = working hours − bookings − blocked time − buffers.
+
+## Regular and flexible hours
+
+Owners choose how they work, in onboarding and later in Settings:
+
+- **Regular hours**: the same weekly pattern. Pingflow only offers times inside it.
+- **Flexible hours**: for owners whose availability changes from week to week. Any time is free unless it is booked or blocked. The owner blocks time they can't work.
+
+Flexible hours still respect bookings, blocked time, service length and buffers. As a safety boundary, Pingflow only offers times between 06:00 and 22:00, so "any free time" never means the middle of the night.
+
+Switching to flexible keeps the regular pattern, so switching back restores it.
 
 ## Pingflow schedule (MVP scope)
 
