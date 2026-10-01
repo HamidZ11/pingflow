@@ -1,3 +1,4 @@
+import { automationCorpus } from "@/domain/messages/fixtures/automation-corpus";
 import { corpus } from "@/domain/messages/fixtures/corpus";
 import type { MessageInterpreter } from "@/lib/ai/interpreter";
 import {
@@ -93,7 +94,7 @@ export function createMessageInterpreter(
         maxOutputTokens: settings.maxOutputTokens,
       });
     case "fixture":
-      return new FixtureMessageInterpreter(corpus);
+      return new FixtureMessageInterpreter([...corpus, ...automationCorpus]);
     case "none":
       return new UnavailableMessageInterpreter();
   }

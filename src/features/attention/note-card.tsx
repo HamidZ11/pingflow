@@ -54,6 +54,8 @@ export function NoteCard({ item }: { item: NoteItem }) {
             startTransition(async () => {
               const result = await dismissNote(item.id);
               if (result.ok) toast({ message: result.message ?? "Done." });
+              else if (result.gone)
+                toast({ message: result.error, tone: "error" });
               else setError(result.error);
             })
           }

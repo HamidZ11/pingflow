@@ -3,7 +3,7 @@
 // detail, such as a service name); overlapping bookings that slip past the
 // slot guard raise the exclusion constraint's 23P01.
 
-type DbError = {
+export type DbError = {
   code?: string;
   hint?: string | null;
   details?: string | null;
@@ -80,4 +80,10 @@ export function logServerError(operation: string, error: unknown) {
 }
 
 export type ActionResult =
-  { ok: true; message?: string } | { ok: false; error: string };
+  | { ok: true; message?: string }
+  | {
+      ok: false;
+      error: string;
+      /** The item was already dealt with elsewhere and has now gone. */
+      gone?: boolean;
+    };

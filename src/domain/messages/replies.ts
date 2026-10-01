@@ -132,7 +132,14 @@ export function cancellationAcknowledgement(): string {
 // most one is ever asked before the owner takes over.
 
 export type ClarificationTopic =
-  "intent" | "person" | "booking" | "later" | "date" | "time" | "service";
+  | "intent"
+  | "person"
+  | "booking"
+  | "later"
+  | "earlier"
+  | "date"
+  | "time"
+  | "service";
 
 export function clarificationQuestion(
   topic: ClarificationTopic,
@@ -161,6 +168,8 @@ export function clarificationQuestion(
     }
     case "later":
       return "Do you mean later today, or a different day?";
+    case "earlier":
+      return "Do you mean earlier that day, or a different day?";
     case "date":
       return "What day would suit you?";
     case "time":
@@ -170,6 +179,27 @@ export function clarificationQuestion(
     case "intent":
       return "Sorry, I didn’t quite catch that. What would you like to do?";
   }
+}
+
+/**
+ * After one question that didn't settle it: say so plainly, once, and hand
+ * over. Names what's still missing, never guesses at it.
+ */
+export function clarificationHandoff(
+  topic: ClarificationTopic,
+  options: { noun?: string } = {},
+): string {
+  const missing: Record<ClarificationTopic, string> = {
+    intent: "what you’d like to do",
+    person: "who this is about",
+    booking: `which ${options.noun ?? "booking"} you mean`,
+    later: "when you’d like instead",
+    earlier: "when you’d like instead",
+    date: "which day you mean",
+    time: "which time you mean",
+    service: "which one you’d like",
+  };
+  return `I still can’t tell ${missing[topic]}. I’ve passed this to the owner.`;
 }
 
 export { capitalise };

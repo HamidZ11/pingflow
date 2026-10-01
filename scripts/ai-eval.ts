@@ -3,6 +3,7 @@
 //
 //   pnpm ai:eval               every case (41), one call each
 //   pnpm ai:eval --limit 20    the first 20
+//   pnpm ai:eval --automation  the customer automation corpus (40) instead
 //   pnpm ai:eval --owner       the owner-command corpus instead
 //
 // It costs money, so it never runs in CI or the normal test suite and needs
@@ -16,7 +17,8 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { corpus } from "@/domain/messages/fixtures/corpus";
+import { automationCorpus } from "@/domain/messages/fixtures/automation-corpus";
+import { corpus as mainCorpus } from "@/domain/messages/fixtures/corpus";
 import {
   assessCase,
   type CaseAssessment,
@@ -32,7 +34,11 @@ import { estimateCost, priceFor } from "@/lib/ai/pricing";
 import { PROMPT_VERSION } from "@/lib/ai/prompts/message-interpreter";
 import { dollars, git, percentile } from "./eval-shared";
 
-const MAX_CASES = 41;
+const automation = process.argv.includes("--automation");
+const corpus = automation ? automationCorpus : mainCorpus;
+const corpusName = automation ? "automation" : "main";
+
+const MAX_CASES = 45;
 /** Stop early if the first few calls all fail at the provider. */
 const EARLY_PROVIDER_FAILURES = 3;
 
@@ -97,7 +103,7 @@ async function main() {
     Reasoning effort           ${settings.reasoningEffort ?? "model default"}
     Prompt version             ${PROMPT_VERSION}
     Schema                     ${interpretationFormat.name} ${schemaHash}
-    Cases                      ${cases.length}
+    Cases                      ${cases.length} (${corpusName} corpus)
     Maximum API requests       ${maxRequests}: one per case, at most ${settings.maxRetries} retry each
     Price per 1M tokens        ${price ? `$${price.inputPerMillion} in, $${price.cachedInputPerMillion} cached, $${price.outputPerMillion} out` : "not listed: cost will be unknown"}
 `);
@@ -341,6 +347,7 @@ async function main() {
   const timestamp = new Date().toISOString();
   const artifact = {
     kind: "pingflow-ai-eval",
+    corpus: corpusName,
     timestamp,
     git: git(),
     endpoint,
@@ -366,7 +373,7 @@ async function main() {
   mkdirSync(dir, { recursive: true });
   const file = join(
     dir,
-    `${timestamp.replace(/[:.]/g, "-")}-${settings.model}.json`,
+    `${timestamp.replace(/[:.]/g, "-")}-${automation ? "automation-" : ""}${settings.model}.json`,
   );
   writeFileSync(file, `${JSON.stringify(artifact, null, 2)}\n`);
 

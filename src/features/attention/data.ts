@@ -149,7 +149,13 @@ export type RescheduleItem = RequestBase & {
   type: "reschedule";
   service: ServiceSummary;
   series: string | null;
-  current: { day: string; relativeDay: string; time: string };
+  current: {
+    day: string;
+    relativeDay: string;
+    time: string;
+    /** It has already started or happened: too late to move. */
+    passed: boolean;
+  };
   bookingId: string;
   requested: Requested;
   proposal: Proposal | null;
@@ -489,6 +495,7 @@ export async function loadAttention(
         day: formatDate(currentDate),
         relativeDay: formatRelativeDate(currentDate, today),
         time: formatTimeRange(startsAt, endsAt, tz),
+        passed: startsAt <= now,
       },
       bookingId: booking.id,
       ...timed,

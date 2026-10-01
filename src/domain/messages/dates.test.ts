@@ -89,6 +89,20 @@ describe("resolving days", () => {
     ).toBeNull();
   });
 
+  it("“the 6th” is the next 6th: this month if it's still to come, else next", () => {
+    const the = (n: number, today = monday) =>
+      day({ kind: "calendar_date", day: n, month: null }, today);
+    // Monday 28 September.
+    expect(the(30)).toEqual({ kind: "day", date: "2026-09-30" });
+    expect(the(28)).toEqual({ kind: "day", date: "2026-09-28" });
+    expect(the(6)).toEqual({ kind: "day", date: "2026-10-06" });
+    // No 31st in September or November: the next month that has one.
+    expect(the(31, "2026-10-31")).toEqual({ kind: "day", date: "2026-10-31" });
+    expect(the(31, "2026-11-01")).toEqual({ kind: "day", date: "2026-12-31" });
+    // Across the year end.
+    expect(the(2, "2026-12-15")).toEqual({ kind: "day", date: "2027-01-02" });
+  });
+
   it("this week and next week are ranges", () => {
     expect(day({ kind: "this_week" }, "2026-10-01")).toEqual({
       kind: "range",

@@ -6,7 +6,11 @@ import type {
   WeekdayName,
 } from "@/domain/messages/interpretation";
 import { interpretation } from "@/domain/messages/interpretation";
-import type { Outcome, PendingClarification } from "@/domain/messages/policy";
+import type {
+  OpenRequest,
+  Outcome,
+  PendingClarification,
+} from "@/domain/messages/policy";
 import type { Sender, WorldName } from "@/domain/messages/fixtures/world";
 
 // The evaluation corpus: realistic UK WhatsApp messages (casual, with
@@ -22,6 +26,10 @@ export type EvalCase = {
   world: WorldName;
   /** An open clarifying question this message answers. */
   pending?: Omit<PendingClarification, "messageId" | "customerId"> & {
+    originalText: string;
+  };
+  /** A request of the sender's still waiting for the owner. */
+  openRequest?: Omit<OpenRequest, "id" | "customerId"> & {
     originalText: string;
   };
   gold: Interpretation;
@@ -42,7 +50,7 @@ export type EvalCase = {
   };
 };
 
-const date = {
+export const date = {
   today: { kind: "today", weekday: null, week: null, day: null, month: null },
   tomorrow: {
     kind: "tomorrow",
@@ -70,17 +78,19 @@ const date = {
   NonNullable<DateReference> | ((...a: never[]) => NonNullable<DateReference>)
 >;
 
-const time = (
+export const time = (
   constraint: NonNullable<TimeReference>["constraint"],
   t: string | null = null,
 ): NonNullable<TimeReference> => ({ constraint, time: t });
 
-function c(
+export function c(
   id: string,
   text: string,
   gold: Partial<Interpretation> & Pick<Interpretation, "intent">,
   outcome: Outcome,
-  options: Partial<Pick<EvalCase, "sender" | "world" | "pending">> & {
+  options: Partial<
+    Pick<EvalCase, "sender" | "world" | "pending" | "openRequest">
+  > & {
     check?: Omit<EvalCase["expected"], "intent" | "outcome">;
   } = {},
 ): EvalCase {
@@ -91,6 +101,7 @@ function c(
     sender: options.sender ?? "sarah",
     world: options.world ?? "driving",
     pending: options.pending,
+    openRequest: options.openRequest,
     gold: g,
     expected: { intent: g.intent, outcome, ...options.check },
   };

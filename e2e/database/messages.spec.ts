@@ -12,6 +12,7 @@ import {
 } from "../../src/lib/ai/fixture-interpreter";
 import { OpenAIMessageInterpreter } from "../../src/lib/ai/openai-interpreter";
 import type { MessageInterpreter } from "../../src/lib/ai/interpreter";
+import { PROMPT_VERSION } from "../../src/lib/ai/prompts/message-interpreter";
 import { adminClient, anonClient, demoOwner, hasKeys, ownerClient } from "./db";
 
 // The inbound message pipeline against the real database: the same
@@ -35,6 +36,15 @@ function deps(interpreter: MessageInterpreter = fixture): PipelineDeps {
 
 let businessId = "";
 let seq = 0;
+
+/** How a reply names Friday: "tomorrow" when run on a Thursday. */
+const FRIDAY =
+  new Intl.DateTimeFormat("en-GB", {
+    weekday: "long",
+    timeZone: "Europe/London",
+  }).format(new Date(Date.now() + 86_400_000)) === "Friday"
+    ? /tomorrow/
+    : /Friday/;
 const nextId = () => `test-${Date.now()}-${++seq}`;
 
 function send(
@@ -173,7 +183,7 @@ test("B: availability after 4 on Friday offers at most three real times after 16
   const report = await send(SARAH, "Anything after 4 Friday?");
   expect(report.decision?.outcome).toBe("auto_reply");
   const body = report.decision!.reply!.body;
-  expect(body).toMatch(/Friday/);
+  expect(body).toMatch(FRIDAY);
   const times = body.match(/\d\d:\d\d/g) ?? [];
   expect(times.length).toBeLessThanOrEqual(3);
   for (const t of times) expect(t >= "16:00").toBe(true);
@@ -194,7 +204,7 @@ test("automation settings decide whether routine replies go automatically", asyn
     expect(task.kind).toBe("reply_needed");
     expect(task.understood).toMatchObject({
       reason: "automation_off",
-      draft: expect.stringMatching(/Friday/),
+      draft: expect.stringMatching(FRIDAY),
     });
   } finally {
     await admin
@@ -257,7 +267,13 @@ test("D: an unclear message gets one question, then goes to the owner", async ()
   const still = await send(SARAH, "dunno really");
   expect(still.decision?.outcome).toBe("owner_reply_task");
   expect(still.decision?.reason).toBe("clarification_exhausted");
-  expect(await repliesFor(still.runId)).toEqual([]);
+  // One fixed line saying so, never a second question.
+  expect(await repliesFor(still.runId)).toEqual([
+    expect.objectContaining({
+      body: "I still can’t tell when you’d like instead. I’ve passed this to the owner.",
+      author: "pingflow",
+    }),
+  ]);
   const [task] = await openActionFor(still.messageId);
   expect(task).toMatchObject({
     kind: "reply_needed",
@@ -532,7 +548,7 @@ test("each OpenAI call is recorded once, at Luna's price, to the micro-dollar", 
     currency: "USD",
     external_reference: expect.stringMatching(/^resp_/),
     metadata: expect.objectContaining({
-      prompt_version: "message_interpreter_v1",
+      prompt_version: PROMPT_VERSION,
       provider_request_id: "req_x",
       message_id: report.messageId,
       outcome: "interpreted",

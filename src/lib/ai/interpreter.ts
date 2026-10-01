@@ -23,6 +23,12 @@ export type InterpreterRequest = {
   };
   /** Set when this message answers a question Pingflow asked. */
   clarification: { originalMessage: string; question: string } | null;
+  /**
+   * The message behind this customer's request that is still waiting for
+   * the owner, so a follow-up ("actually 6 would be better") can be read
+   * as a change to it. Its words only: never the booking itself.
+   */
+  openRequest?: { originalMessage: string } | null;
 };
 
 /** What the provider reported it used: real counts, never estimates. */

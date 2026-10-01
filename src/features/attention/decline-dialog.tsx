@@ -5,6 +5,7 @@ import { Spinner } from "@/components/app/spinner";
 import { Button } from "@/components/button-link";
 import { channelNote } from "@/features/attention/channel-note";
 import type { ReplyChannel } from "@/features/attention/data";
+
 // Declining messages the customer, so the reply is shown before it goes.
 export function DeclineDialog({
   title,
@@ -16,6 +17,11 @@ export function DeclineDialog({
   error,
   onClose,
   onConfirm,
+  labels = {
+    back: "Keep request",
+    confirm: "Decline and reply",
+    busy: "Declining…",
+  },
 }: {
   title: string;
   description: string;
@@ -26,6 +32,7 @@ export function DeclineDialog({
   error: string | null;
   onClose: () => void;
   onConfirm: () => void;
+  labels?: { back: string; confirm: string; busy: string };
 }) {
   return (
     <Overlay
@@ -38,16 +45,16 @@ export function DeclineDialog({
       footer={
         <>
           <Button variant="ghost" disabled={busy} onClick={onClose}>
-            Keep request
+            {labels.back}
           </Button>
           <Button disabled={busy} onClick={onConfirm}>
             {busy ? (
               <>
                 <Spinner />
-                Declining…
+                {labels.busy}
               </>
             ) : (
-              "Decline and reply"
+              labels.confirm
             )}
           </Button>
         </>

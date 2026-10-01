@@ -92,10 +92,23 @@ export function resolveDateReference(
       return { kind: "day", date: addDays(today, ahead) };
     }
     case "calendar_date": {
-      if (!ref.day || !ref.month) return null;
+      if (!ref.day) return null;
       const year = Number(today.slice(0, 4));
-      for (const y of [year, year + 1]) {
-        const date = `${y}-${String(ref.month).padStart(2, "0")}-${String(ref.day).padStart(2, "0")}`;
+      const key = (y: number, m: number) =>
+        `${y}-${String(m).padStart(2, "0")}-${String(ref.day).padStart(2, "0")}`;
+      if (ref.month) {
+        for (const y of [year, year + 1]) {
+          const date = key(y, ref.month);
+          if (isDateKey(date) && date >= today) return { kind: "day", date };
+        }
+        return null;
+      }
+      // "The 6th": the next 6th from today, this month or the next one
+      // that has that day.
+      const month = Number(today.slice(5, 7));
+      for (let i = 0; i < 3; i++) {
+        const m = ((month - 1 + i) % 12) + 1;
+        const date = key(year + Math.floor((month - 1 + i) / 12), m);
         if (isDateKey(date) && date >= today) return { kind: "day", date };
       }
       return null;

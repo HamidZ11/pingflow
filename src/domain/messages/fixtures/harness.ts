@@ -29,7 +29,10 @@ import {
 // worlds. The unit tests use it with the gold interpretations; `pnpm
 // ai:eval` uses it with what the live model returned.
 
-type CaseContext = Pick<EvalCase, "sender" | "world" | "pending">;
+type CaseContext = Pick<
+  EvalCase,
+  "sender" | "world" | "pending" | "openRequest"
+>;
 
 const businessTypes: Record<WorldName, string> = {
   driving: "driving_instructor",
@@ -67,6 +70,19 @@ export function policyInputFor(
     pendingClarification: testCase.pending
       ? { ...testCase.pending, messageId: "m-0", customerId: null }
       : null,
+    openRequests: testCase.openRequest
+      ? [
+          {
+            id: "r-0",
+            kind: testCase.openRequest.kind,
+            customerId:
+              linkedCustomers(testCase.world, testCase.sender)[0]?.id ?? null,
+            bookingId: testCase.openRequest.bookingId,
+            preferredDate: testCase.openRequest.preferredDate,
+            serviceId: testCase.openRequest.serviceId,
+          },
+        ]
+      : [],
     services: world.services,
     upcoming,
     usualServiceId: upcoming[0]?.serviceId ?? null,
@@ -94,6 +110,9 @@ export function interpreterRequestFor(testCase: EvalCase) {
           originalMessage: testCase.pending.originalText,
           question: testCase.pending.question,
         }
+      : null,
+    openRequest: testCase.openRequest
+      ? { originalMessage: testCase.openRequest.originalText }
       : null,
   };
 }

@@ -251,8 +251,50 @@ describe("one clarifying question, then the owner", () => {
     );
     expect(d.outcome).toBe("owner_reply_task");
     expect(d.ownerTask?.reason).toBe("clarification_exhausted");
-    expect(d.reply).toBeNull();
+    // One fixed message saying so, never another question.
+    expect(d.reply).toEqual({
+      kind: "handoff",
+      body: "I still can’t tell when you’d like instead. I’ve passed this to the owner.",
+    });
+    expect(d.activity.map((a) => a.kind)).toEqual([
+      "reply_needed",
+      "reply_sent",
+    ]);
     expect(d.clarification).toEqual({ clear: true });
+  });
+
+  it("the hand-over names what's still missing", () => {
+    // Asked which day; the answer named a day but still no usable time.
+    const stillNoTime = interpretation({
+      intent: "new_booking_request",
+      service_reference: "driving lesson",
+      requested_date: {
+        kind: "weekday",
+        weekday: "friday",
+        week: null,
+        day: null,
+        month: null,
+      },
+      requested_time: { constraint: "exact", time: null },
+    });
+    const d = decide(
+      inputFor(
+        {
+          ...sarah,
+          pending: {
+            intent: "new_booking_request",
+            topic: "date",
+            question: "What day would suit you?",
+            turns: 1,
+            originalText: "Can I book a driving lesson?",
+          },
+        },
+        stillNoTime,
+      ),
+    );
+    expect(d.reply?.body).toBe(
+      "I still can’t tell which time you mean. I’ve passed this to the owner.",
+    );
   });
 
   it("a thank-you doesn't close an open question", () => {
@@ -264,6 +306,170 @@ describe("one clarifying question, then the owner", () => {
     );
     expect(d.outcome).toBe("no_action");
     expect(d.clarification).toBeNull();
+  });
+});
+
+describe("earlier and later", () => {
+  const tomorrow = {
+    kind: "tomorrow",
+    weekday: null,
+    week: null,
+    day: null,
+    month: null,
+  } as const;
+
+  it("“earlier tomorrow”, about tomorrow's lesson, means earlier that day", () => {
+    const d = decide(
+      inputFor(
+        sarah,
+        interpretation({
+          intent: "reschedule_request",
+          referenced_booking: {
+            kind: "unspecified",
+            date: tomorrow,
+            time: null,
+            service: null,
+          },
+          requested_time: { constraint: "earlier", time: null },
+        }),
+      ),
+    );
+    expect(d.outcome).toBe("create_approval");
+    const proposal = d.approval!.proposal!.startsAt;
+    expect(dateKeyOf(proposal, TZ)).toBe("2026-09-29");
+    expect(clockTimeOf(proposal, TZ) < "16:00").toBe(true);
+  });
+
+  it("with no day, “earlier” is asked about in its own words", () => {
+    const d = decide(
+      inputFor(
+        sarah,
+        interpretation({
+          intent: "reschedule_request",
+          requested_time: { constraint: "earlier", time: null },
+        }),
+      ),
+    );
+    expect(d.reply?.body).toBe(
+      "Do you mean earlier that day, or a different day?",
+    );
+  });
+});
+
+describe("a follow-up revises the request still waiting for the owner", () => {
+  const friday = {
+    kind: "weekday",
+    weekday: "friday",
+    week: null,
+    day: null,
+    month: null,
+  } as const;
+  const openMove = {
+    kind: "reschedule_request" as const,
+    bookingId: "b-sarah-2",
+    preferredDate: "2026-10-02",
+    serviceId: null,
+    originalText: "Can we move my lesson on the 6th to Friday after 4?",
+  };
+  const justATime = interpretation({
+    intent: "reschedule_request",
+    requested_time: { constraint: "exact", time: "18:00" },
+  });
+  const proposed = (d: ReturnType<typeof decide>) =>
+    d.approval?.proposal
+      ? `${dateKeyOf(d.approval.proposal.startsAt, TZ)} ${clockTimeOf(d.approval.proposal.startsAt, TZ)}`
+      : null;
+
+  it("“actually 6 would be better” moves the same booking, on the day asked for", () => {
+    const d = decide(inputFor({ ...sarah, openRequest: openMove }, justATime));
+    expect(d.approval).toMatchObject({
+      kind: "reschedule_request",
+      bookingId: "b-sarah-2",
+    });
+    expect(proposed(d)).toBe("2026-10-02 18:00");
+  });
+
+  it("without a request waiting, a bare time means the booking's own day", () => {
+    const d = decide(inputFor(sarah, justATime));
+    // The next booking (tomorrow), at 18:00 that day.
+    expect(d.approval?.bookingId).toBe("b-sarah-1");
+    expect(proposed(d)).toBe("2026-09-29 18:00");
+  });
+
+  it("naming another booking isn't a revision", () => {
+    const d = decide(
+      inputFor(
+        { ...sarah, openRequest: openMove },
+        interpretation({
+          intent: "reschedule_request",
+          referenced_booking: {
+            kind: "on_date",
+            date: {
+              kind: "tomorrow",
+              weekday: null,
+              week: null,
+              day: null,
+              month: null,
+            },
+            time: null,
+            service: null,
+          },
+          requested_date: friday,
+          requested_time: { constraint: "exact", time: "18:00" },
+        }),
+      ),
+    );
+    expect(d.approval?.bookingId).toBe("b-sarah-1");
+  });
+
+  it("a new booking request keeps the day and service it was for", () => {
+    const d = decide(
+      inputFor(
+        {
+          ...sarah,
+          openRequest: {
+            kind: "booking_request",
+            bookingId: null,
+            preferredDate: "2026-10-02",
+            serviceId: "svc-long",
+            originalText: "Can I book a two hour lesson Friday at 3?",
+          },
+        },
+        interpretation({
+          intent: "new_booking_request",
+          requested_time: { constraint: "exact", time: "17:00" },
+        }),
+      ),
+    );
+    expect(d.approval).toMatchObject({
+      kind: "booking_request",
+      understood: expect.objectContaining({
+        preferred_date: "2026-10-02",
+        service_id: "svc-long",
+      }),
+    });
+    expect(proposed(d)).toBe("2026-10-02 17:00");
+  });
+
+  it("someone else's open request is never borrowed", () => {
+    // Omar's move is waiting in the same business; Sarah's bare time is
+    // about her own next booking, on its own day.
+    const d = decide(
+      inputFor(sarah, justATime, {
+        openRequests: [
+          {
+            id: "r-omar",
+            kind: "reschedule_request",
+            customerId: "c-omar",
+            bookingId: "b-omar-1",
+            preferredDate: "2026-10-02",
+            serviceId: null,
+          },
+        ],
+      }),
+    );
+    expect(d.approval?.bookingId).toBe("b-sarah-1");
+    expect(proposed(d)).toBe("2026-09-29 18:00");
   });
 });
 

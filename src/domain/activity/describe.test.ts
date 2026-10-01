@@ -86,6 +86,26 @@ describe("activity for inbound messages", () => {
       "Reply to Sarah Khan",
     );
     expect(reply("owner")).toBe("Your reply to Sarah Khan");
+    expect(reply("pingflow", { reply_kind: "handoff" })).toBe(
+      "Told Sarah Khan it’s been passed to you",
+    );
+  });
+
+  it("says why a request closed without an answer", () => {
+    const closed = (reason: string) =>
+      describeActivity(
+        event({ kind: "request_closed", actor: "owner", details: { reason } }),
+        tz,
+      ).text;
+    expect(closed("superseded")).toBe(
+      "Sarah Khan’s earlier request was replaced by a newer one",
+    );
+    expect(closed("booked_by_owner")).toBe(
+      "Sarah Khan’s booking request was closed because you booked them yourself",
+    );
+    expect(closed("booking_moved")).toBe(
+      "Sarah Khan’s request was closed because you moved the booking",
+    );
   });
 
   it("says why a message was left for the owner", () => {

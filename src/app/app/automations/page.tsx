@@ -8,7 +8,16 @@ export const metadata: Metadata = { title: "Automations" };
 
 export default async function AutomationsPage() {
   const owner = await requireOwner();
-  const a = await loadAutomation(owner);
+  const [a, connection] = await Promise.all([
+    loadAutomation(owner),
+    owner.supabase
+      .from("whatsapp_connections")
+      .select("status")
+      .eq("business_id", owner.business.id)
+      .in("status", ["connected", "needs_attention"])
+      .maybeSingle(),
+  ]);
+  if (connection.error) throw connection.error;
   return (
     <div className={pageClassName("narrow")}>
       <PageHeader
@@ -24,6 +33,7 @@ export default async function AutomationsPage() {
           bookingTime: a.bookingTimeRepliesEnabled,
           cancellations: a.cancellationAcknowledgementsEnabled,
         }}
+        whatsappConnected={Boolean(connection.data)}
       />
     </div>
   );

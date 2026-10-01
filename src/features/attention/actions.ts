@@ -26,7 +26,7 @@ import {
 } from "@/features/schedule/engine-context";
 import { sendAfterResponse } from "@/features/whatsapp/server";
 import { type Owner, requireOwner } from "@/lib/auth/session";
-import { type ActionResult, friendlyError } from "@/lib/errors";
+import { type ActionResult, type DbError, friendlyError } from "@/lib/errors";
 
 // The owner's answers to requests in Attention. Each action re-reads the
 // request, re-checks the schedule with the availability engine, works out
@@ -57,10 +57,37 @@ type Booking = NonNullable<Request["booking"]> & {
   service: NonNullable<NonNullable<Request["booking"]>["service"]>;
 };
 
-const handled: ActionResult = {
-  ok: false,
-  error: "This request has already been handled.",
-};
+/** Already answered, or closed by something the owner did elsewhere. */
+function handled(): ActionResult {
+  refresh();
+  return {
+    ok: false,
+    error: "This request has already been handled.",
+    gone: true,
+  };
+}
+
+/**
+ * A failed answer, said plainly. When the failure means the schedule or
+ * the request changed underneath the owner (the time was taken, the
+ * booking went, someone already answered it), Attention is refreshed so
+ * the card shows how things are now rather than offering the same button.
+ */
+function failed(error: DbError, operation: string): ActionResult {
+  const message = friendlyError(error, operation);
+  if (error.hint === "already_resolved") {
+    refresh();
+    return { ok: false, error: message, gone: true };
+  }
+  if (
+    error.code === "23P01" ||
+    error.hint === "slot_unavailable" ||
+    error.hint === "booking_inactive"
+  ) {
+    refresh();
+  }
+  return { ok: false, error: message };
+}
 
 function withBooking(request: Request): request is Request & {
   booking: Booking;
@@ -113,7 +140,7 @@ export async function approveRequest(
 ): Promise<ActionResult> {
   const owner = await requireOwner();
   const request = await loadRequest(owner, actionId);
-  if (!request || request.status !== "open") return handled;
+  if (!request || request.status !== "open") return handled();
   if (request.kind === "reschedule_request") {
     return approveMove(owner, request, chosenStartsAt);
   }
@@ -139,6 +166,13 @@ async function approveMove(
   if (!startsAt) return { ok: false, error: "Choose a time first." };
 
   const { booking } = request;
+  if (new Date(booking.starts_at) <= new Date()) {
+    refresh();
+    return {
+      ok: false,
+      error: `${possessiveFirst(request.customer.full_name)} ${serviceNoun(booking.service.name)} on ${formatDateTime(new Date(booking.starts_at), tz)} has already started, so it can’t be moved. Decline it or reply yourself.`,
+    };
+  }
   const problem = await recheck(
     owner,
     startsAt,
@@ -151,7 +185,10 @@ async function approveMove(
     },
     booking.id,
   );
-  if (problem) return { ok: false, error: problem };
+  if (problem) {
+    refresh();
+    return { ok: false, error: problem };
+  }
 
   const plan = planRescheduleApproval({
     newStartsAt: startsAt,
@@ -169,8 +206,7 @@ async function approveMove(
     p_reply_body: plan.replyBody ?? undefined,
     p_reminder_send_at: plan.reminderSendAt?.toISOString(),
   });
-  if (error)
-    return { ok: false, error: friendlyError(error, "approveReschedule") };
+  if (error) return failed(error, "approveReschedule");
 
   sendAfterResponse();
   refresh();
@@ -214,7 +250,10 @@ async function approveBooking(
     durationMinutes: service.duration_minutes,
     bufferMinutes: service.buffer_minutes,
   });
-  if (problem) return { ok: false, error: problem };
+  if (problem) {
+    refresh();
+    return { ok: false, error: problem };
+  }
 
   const plan = planBookingApproval({
     startsAt,
@@ -232,8 +271,7 @@ async function approveBooking(
     p_reply_body: plan.replyBody ?? undefined,
     p_reminder_send_at: plan.reminderSendAt?.toISOString(),
   });
-  if (error)
-    return { ok: false, error: friendlyError(error, "approveBooking") };
+  if (error) return failed(error, "approveBooking");
 
   sendAfterResponse();
   refresh();
@@ -265,8 +303,7 @@ async function approveCancellation(
     p_decision: "approve",
     p_reply_body: replyBody ?? undefined,
   });
-  if (error)
-    return { ok: false, error: friendlyError(error, "approveCancellation") };
+  if (error) return failed(error, "approveCancellation");
 
   sendAfterResponse();
   refresh();
@@ -282,7 +319,7 @@ export async function declineRequest(actionId: string): Promise<ActionResult> {
   const tz = owner.business.timeZone;
   const today = dateKeyOf(new Date(), tz);
   const request = await loadRequest(owner, actionId);
-  if (!request || request.status !== "open") return handled;
+  if (!request || request.status !== "open") return handled();
   const cannot: ActionResult = {
     ok: false,
     error: "This request can’t be declined here.",
@@ -332,8 +369,7 @@ export async function declineRequest(actionId: string): Promise<ActionResult> {
     p_decision: "decline",
     p_reply_body: replyBody,
   });
-  if (error)
-    return { ok: false, error: friendlyError(error, "declineRequest") };
+  if (error) return failed(error, "declineRequest");
 
   sendAfterResponse();
   refresh();
@@ -344,7 +380,7 @@ export async function declineRequest(actionId: string): Promise<ActionResult> {
 export async function takeOverRequest(actionId: string): Promise<ActionResult> {
   const owner = await requireOwner();
   const request = await loadRequest(owner, actionId);
-  if (!request || request.status !== "open") return handled;
+  if (!request || request.status !== "open") return handled();
   if (!isRequestKind(request.kind)) {
     return { ok: false, error: "This request can’t be handed over here." };
   }
@@ -353,8 +389,7 @@ export async function takeOverRequest(actionId: string): Promise<ActionResult> {
     p_action_id: actionId,
     p_decision: "take_over",
   });
-  if (error)
-    return { ok: false, error: friendlyError(error, "takeOverRequest") };
+  if (error) return failed(error, "takeOverRequest");
 
   refresh();
   const name = request.customer
@@ -381,8 +416,7 @@ export async function replyToMessage(
     p_action_id: actionId,
     p_body: text,
   });
-  if (error)
-    return { ok: false, error: friendlyError(error, "replyToMessage") };
+  if (error) return failed(error, "replyToMessage");
   sendAfterResponse();
   refresh();
 
@@ -412,7 +446,7 @@ export async function dismissNote(actionId: string): Promise<ActionResult> {
   const { error } = await owner.supabase.rpc("dismiss_pending_action", {
     p_action_id: actionId,
   });
-  if (error) return { ok: false, error: friendlyError(error, "dismissNote") };
+  if (error) return failed(error, "dismissNote");
   refresh();
   return { ok: true, message: "Marked as handled." };
 }

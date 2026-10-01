@@ -85,6 +85,8 @@ export function ReplyCard({ item }: { item: ReplyItem }) {
               if (result.ok) {
                 toast({ message: result.message ?? "Done." });
                 document.querySelector<HTMLElement>("main h1")?.focus();
+              } else if (result.gone) {
+                toast({ message: result.error, tone: "error" });
               } else setError(result.error);
             })
           }
@@ -135,6 +137,9 @@ function ReplySheet({
         onClose();
         toast({ message: result.message ?? "Done." });
         document.querySelector<HTMLElement>("main h1")?.focus();
+      } else if (result.gone) {
+        onClose();
+        toast({ message: result.error, tone: "error" });
       } else {
         setError(result.error);
       }

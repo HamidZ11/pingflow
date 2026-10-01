@@ -27,34 +27,35 @@ const OTHER = "other";
 const OWNER = "owner";
 const UNKNOWN_NUMBER = "+447700900111";
 
-// Messages the fixture interpreter knows (the evaluation corpus), grouped
+// Messages the fixture interpreter knows (the evaluation corpora), grouped
 // by the flows they exercise. The demo seed's numbers: Sarah, Dana (Leo and
-// Adam's parent), and a number nobody knows.
+// Adam's parent), and a number nobody knows. A "Revised" sample changes the
+// request sent just before it, so send them in order.
+const SARAH = "+447700900123";
 const samples = [
+  { flow: "Next booking", text: "When's my next lesson?", from: SARAH },
+  { flow: "Availability", text: "Are you free Friday at 4?", from: SARAH },
+  { flow: "Availability", text: "Any spaces Thursday afternoon?", from: SARAH },
+  { flow: "Availability", text: "Anything after 4 Friday?", from: SARAH },
   {
-    flow: "Next booking",
-    text: "When's my next lesson?",
-    from: "+447700900123",
+    flow: "New booking",
+    text: "Can I book a driving lesson Friday at 5?",
+    from: SARAH,
   },
-  {
-    flow: "Availability",
-    text: "Anything after 4 Friday?",
-    from: "+447700900123",
-  },
-  { flow: "Availability", text: "anything friday aft?", from: "+447700900123" },
+  { flow: "Revised", text: "Actually could I do 6 instead?", from: SARAH },
   {
     flow: "Reschedule",
     text: "Can we move tomorrow's lesson to Friday after 4?",
-    from: "+447700900123",
+    from: SARAH,
   },
-  {
-    flow: "Cancellation",
-    text: "Need to cancel tomorrow sorry",
-    from: "+447700900123",
-  },
-  { flow: "Clarification", text: "Can we do later?", from: "+447700900123" },
-  { flow: "Clarification", text: "dunno really", from: "+447700900123" },
-  { flow: "Question", text: "How long is a lesson?", from: "+447700900123" },
+  { flow: "Revised", text: "Actually 6 would be better", from: SARAH },
+  { flow: "Cancellation", text: "Need to cancel tomorrow sorry", from: SARAH },
+  { flow: "Cancellation", text: "I need to cancel my lesson", from: SARAH },
+  { flow: "Clarification", text: "Can I move my lesson?", from: SARAH },
+  { flow: "Clarification", text: "Friday works best for me", from: SARAH },
+  { flow: "Clarification", text: "not sure yet tbh", from: SARAH },
+  { flow: "Clarification", text: "Can we do later?", from: SARAH },
+  { flow: "Question", text: "How long is a lesson?", from: SARAH },
   { flow: "Privacy", text: "When is Sarah booked?", from: UNKNOWN_NUMBER },
   {
     flow: "Privacy",

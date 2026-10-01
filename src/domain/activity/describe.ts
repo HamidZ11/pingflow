@@ -241,6 +241,11 @@ export function describeActivity(
       if (d.reason === "superseded") {
         return line(`${whose} earlier request was replaced by a newer one`);
       }
+      if (d.reason === "booked_by_owner") {
+        return line(
+          `${whose} booking request was closed because you booked them yourself`,
+        );
+      }
       return line(
         `${whose} request was closed because you ${d.reason === "booking_cancelled" ? "cancelled" : "moved"} the booking`,
       );
@@ -271,6 +276,9 @@ export function describeActivity(
       }
       if (d.reply_kind === "clarification") {
         return line(`Question to ${who}`, event.messageBody);
+      }
+      if (d.reply_kind === "handoff") {
+        return line(`Told ${who} it’s been passed to you`, event.messageBody);
       }
       return line(`Reply to ${who}`, event.messageBody);
     case "message_not_sent":

@@ -68,12 +68,21 @@ Every message goes through one function, `processInboundMessage` in `src/feature
 5. Decide, in plain code (`src/domain/messages/policy.ts`): identity, dates, the real schedule, Automations settings and the safety rules. The model never decides availability or changes a booking.
 6. Apply the decision in one transaction: a reply, an approval or a message for the owner, the clarifying-question state, and Activity.
 
+### Requests the owner answers
+
+New bookings, moves and cancellations become requests in Attention (`pending_actions`), never changes. The rules that keep them honest:
+
+- **One version at a time.** A newer request about the same booking, or a newer booking request from the same customer, replaces the older one, which stays on record with `superseded_by`. A follow-up like "Actually 6 would be better" is read as a change to the request still waiting: the interpreter sees the earlier message's words (never the booking), and the policy keeps the booking, day and service it was about.
+- **The owner's own action wins.** Moving or cancelling the booking in Schedule (or by owner command) closes requests about it; booking the customer yourself closes their waiting booking request. A closed request can't be approved.
+- **Checked as it's written.** Approving re-checks the time in the app, and the database's slot guard checks it again in the same transaction as the change, the reply, the reminder and Activity. If anything fails, nothing changes and nothing is sent. A time taken since the customer asked shows as taken, with no approve button; a request answered elsewhere disappears with "This request has already been handled."
+- **One question, then the owner.** If the answer to Pingflow's question still isn't clear, the customer gets one fixed line ("I still can't tell which day you mean. I've passed this to the owner.") and the message waits in Attention.
+
 If the message can't be read (no key, timeout, refusal, bad output, or any unexpected error), it's kept, nothing is sent, and it goes to Attention as "Pingflow couldn't understand this message". It can be reprocessed; a retry replaces what the failed attempt raised.
 
 Interpreters (`src/lib/ai/config.ts` picks one):
 
-- **OpenAI**, when `OPENAI_API_KEY` is set: the Responses API with a strict JSON schema (`src/domain/messages/interpretation.ts`), `store: false`, an 8 second timeout and at most one retry of a temporary failure. The output is validated again before use. The prompt is `src/lib/ai/prompts/message-interpreter.ts`; it gets first names only, never phone numbers or bookings.
-- **Fixture**, with `PINGFLOW_MESSAGE_INTERPRETER=fixture` in development: knows the evaluation corpus and nothing else. Results say "fixture"; it never poses as OpenAI.
+- **OpenAI**, when `OPENAI_API_KEY` is set: the Responses API with a strict JSON schema (`src/domain/messages/interpretation.ts`), `store: false`, an 8 second timeout and at most one retry of a temporary failure. The output is validated again before use. The prompt is `src/lib/ai/prompts/message-interpreter.ts`; it gets first names only, never phone numbers or bookings, plus the words of an earlier message when it's answering Pingflow's question or changing a request still waiting.
+- **Fixture**, with `PINGFLOW_MESSAGE_INTERPRETER=fixture` in development: knows the evaluation corpora and nothing else. Results say "fixture"; it never poses as OpenAI.
 - **None** otherwise: every message goes to the owner unread.
 
 ### Message simulator
@@ -91,6 +100,7 @@ Each model call writes one row to the usage ledger with the tokens the API repor
 Two opt-in commands use the real API. They cost money, need `OPENAI_API_KEY` in `.env.local`, and say what they will send before sending it:
 
 - `pnpm ai:eval` sends all 41 corpus messages (`--limit 20` for fewer) and judges each reading by what Pingflow would then do: intent, dates, times, person, service, clarification, outcome and structured-output validity, with each miss rated critical, important or minor. It counts every API request, stops rather than exceed one retry per message, and reports latency, tokens, cache hits and cost. Results are saved to `results/ai-evals/` (git-ignored) as JSON: the synthetic messages, readings and totals, never keys. It writes nothing to the database.
+- `pnpm ai:eval --automation` does the same for the 40 messages in `src/domain/messages/fixtures/automation-corpus.ts`: bookings, moves, cancellations, availability, one question then the owner, and follow-ups that revise a waiting request.
 - `pnpm ai:eval --owner` does the same for the 37 owner commands in `src/domain/owner/fixtures/`: intent, dates, times, person, clarification and outcome, with a different change rated critical.
 - `pnpm ai:smoke` sends five messages (next booking, availability, reschedule, an unclear one and a cancellation) through the whole pipeline into a fresh local demo business, `ai-smoke@pingflow.test`, and checks the replies, Attention, that no booking changed, and the usage ledger.
 

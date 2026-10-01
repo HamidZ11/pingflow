@@ -7,6 +7,7 @@ import { Spinner } from "@/components/app/spinner";
 import { useToast } from "@/components/app/toaster";
 import { Button } from "@/components/button-link";
 import { Bubble } from "@/components/reschedule-demo/chat";
+import { serviceNoun } from "@/domain/messages/templates";
 import {
   approveRequest,
   declineRequest,
@@ -54,7 +55,13 @@ function useAnswer(item: RequestItem) {
         });
         // The card is about to disappear; keep focus on the page.
         document.querySelector<HTMLElement>("main h1")?.focus();
+      } else if (result.gone) {
+        // Already answered elsewhere: the card is going, so say why.
+        setSheet(null);
+        toast({ message: result.error, tone: "error" });
+        document.querySelector<HTMLElement>("main h1")?.focus();
       } else {
+        // The card stays, refreshed to show how things are now.
         setError(result.error);
         setBusy(null);
       }
@@ -195,7 +202,9 @@ export function TimedRequestCard({ item }: { item: TimedRequestItem }) {
   const answer = useAnswer(item);
   const { busy } = answer;
   const { proposal } = item;
-  const canApprove = Boolean(proposal?.stillFree);
+  // Too late to move a booking that has already started.
+  const passed = item.type === "reschedule" && item.current.passed;
+  const canApprove = Boolean(proposal?.stillFree) && !passed;
 
   return (
     <Shell
@@ -267,12 +276,22 @@ export function TimedRequestCard({ item }: { item: TimedRequestItem }) {
               )}
             </div>
           </div>
-          {proposal?.stillFree && (
+          {passed && item.type === "reschedule" && (
+            <p className="mt-3 flex items-start gap-2 text-ui-sm text-night-text">
+              <TriangleAlert
+                aria-hidden
+                className="mt-0.5 size-4 shrink-0 text-accent"
+              />
+              {item.customer.firstName}’s {serviceNoun(item.service.name)} on{" "}
+              {item.current.day} has already started, so it can’t be moved.
+            </p>
+          )}
+          {!passed && proposal?.stillFree && (
             <p className="mt-3 text-ui-sm text-night-text-2">
               {proposal.weekday} {proposal.start} is free. {proposal.reason}
             </p>
           )}
-          {proposal && !proposal.stillFree && (
+          {!passed && proposal && !proposal.stillFree && (
             <p className="mt-3 flex items-start gap-2 text-ui-sm text-night-text">
               <TriangleAlert
                 aria-hidden
@@ -310,14 +329,16 @@ export function TimedRequestCard({ item }: { item: TimedRequestItem }) {
               )}
             </Button>
           )}
-          <Button
-            variant={canApprove ? "secondary" : "primary"}
-            className="col-span-2"
-            disabled={busy !== null}
-            onClick={() => answer.setSheet("choose")}
-          >
-            Choose another time
-          </Button>
+          {!passed && (
+            <Button
+              variant={canApprove ? "secondary" : "primary"}
+              className="col-span-2"
+              disabled={busy !== null}
+              onClick={() => answer.setSheet("choose")}
+            >
+              Choose another time
+            </Button>
+          )}
           <Button
             variant="ghost"
             disabled={busy !== null}
@@ -440,15 +461,15 @@ export function CancellationCard({ item }: { item: CancellationItem }) {
             disabled={busy !== null}
             onClick={() => answer.setSheet("decline")}
           >
-            Decline
+            Keep booking
           </Button>
           <TakeOverButton busy={busy} onClick={answer.takeOver} />
         </>
       }
     >
       <DeclineDialog
-        title={`Decline ${item.customer.firstName}’s cancellation?`}
-        description={`The booking stays on ${item.booking.day}, ${item.booking.time}.`}
+        title={`Keep ${item.customer.firstName}’s booking?`}
+        description={`It stays on ${item.booking.day}, ${item.booking.time}.`}
         reply={item.declineReply}
         channel={item.channel}
         open={answer.sheet === "decline"}
@@ -456,6 +477,11 @@ export function CancellationCard({ item }: { item: CancellationItem }) {
         error={answer.sheet === "decline" ? answer.error : null}
         onClose={answer.closeSheet}
         onConfirm={answer.decline}
+        labels={{
+          back: "Back",
+          confirm: "Keep booking and reply",
+          busy: "Replying…",
+        }}
       />
     </Shell>
   );

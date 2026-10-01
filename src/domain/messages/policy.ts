@@ -26,6 +26,7 @@ import {
   availabilityReply,
   cancellationAcknowledgement,
   type ClarificationTopic,
+  clarificationHandoff,
   clarificationQuestion,
   exactTimeFreeReply,
   exactTimeTakenReply,
@@ -55,7 +56,11 @@ import {
 //   automation is on: "when is my booking?" and availability questions.
 // - New bookings, moves and cancellations always wait for the owner.
 // - A message that isn't clear gets one short question. If the answer is
-//   still unclear, the owner takes it from there.
+//   still unclear, the customer is told it's been passed on, and the owner
+//   takes it from there.
+// - A follow-up to a request still waiting for the owner ("actually 6 would
+//   be better") revises that request: same booking, and the day they asked
+//   for unless they name another. The newer request replaces the older one.
 // - Anything else (complaints, questions Pingflow can't answer from its own
 //   data, unknown numbers asking about bookings) goes to the owner. Nothing
 //   free-form is ever sent automatically.
@@ -107,10 +112,28 @@ export type OwnerTaskReason =
   | "no_booking_found";
 
 export type ReplyKind =
-  "next_booking" | "availability" | "clarification" | "cancellation_ack";
+  | "next_booking"
+  | "availability"
+  | "clarification"
+  | "handoff"
+  | "cancellation_ack";
 
 export type ApprovalKind =
   "reschedule_request" | "booking_request" | "cancellation_request";
+
+/**
+ * A request from this conversation still waiting for the owner, as stored:
+ * what a follow-up message may be revising.
+ */
+export type OpenRequest = {
+  id: string;
+  kind: ApprovalKind;
+  customerId: string | null;
+  bookingId: string | null;
+  /** The day they asked for, for a booking or a move. */
+  preferredDate: DateKey | null;
+  serviceId: string | null;
+};
 
 export type Approval = {
   kind: ApprovalKind;
@@ -174,6 +197,8 @@ export type PolicyInput = {
     cancellationAcknowledgements: boolean;
   };
   pendingClarification: PendingClarification | null;
+  /** This conversation's requests still waiting for the owner, newest first. */
+  openRequests: OpenRequest[];
   services: Service[];
   /** Upcoming confirmed bookings of the identified customer, soonest first. */
   upcoming: CustomerBooking[];
@@ -257,9 +282,15 @@ type ServiceChoice =
   | { kind: "found"; service: Service }
   | { kind: "ambiguous"; options: Service[] };
 
-/** Lowercase letters and digits only: "Two-hour lesson" → "twohourlesson". */
+/**
+ * Lowercase letters and digits only, with "&" read as "and":
+ * "Two-hour lesson" → "twohourlesson", "Wash & tidy" → "washandtidy".
+ */
 export function simplify(text: string) {
-  return text.toLowerCase().replace(/[^a-z0-9]/g, "");
+  return text
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]/g, "");
 }
 
 function chooseService(
@@ -357,7 +388,23 @@ export function decide(input: PolicyInput): Decision {
   ): Decision => {
     if (pending && pending.turns >= MAX_CLARIFICATION_TURNS) {
       notes.push(`still unclear after ${pending.turns} question`);
-      return ownerTask("clarification_exhausted");
+      const handedOver = ownerTask("clarification_exhausted");
+      // Say what's still missing: this answer's gap, or, if the answer
+      // made no sense at all, what the question was about.
+      const body = clarificationHandoff(
+        topic === "intent" ? pending.topic : topic,
+        { noun: options.noun },
+      );
+      handedOver.reply = { kind: "handoff", body };
+      handedOver.activity.push({
+        kind: "reply_sent",
+        actor: "pingflow",
+        details: { reply_kind: "handoff", delivery: "simulated" },
+        customerId: customer?.id ?? null,
+        bookingId: null,
+        link: "reply",
+      });
+      return handedOver;
     }
     const question = clarificationQuestion(topic, {
       timeZone: input.timeZone,
@@ -501,6 +548,14 @@ export function decide(input: PolicyInput): Decision {
 
   const noun = (serviceName?: string) =>
     serviceNoun(serviceName ?? input.services[0]?.name ?? "booking");
+
+  // The newest request of this kind this customer is still waiting on.
+  const openRequest = (kind: ApprovalKind) =>
+    customer
+      ? (input.openRequests.find(
+          (r) => r.kind === kind && r.customerId === customer.id,
+        ) ?? null)
+      : null;
 
   switch (i.intent) {
     case "next_booking_query": {
@@ -648,16 +703,26 @@ export function decide(input: PolicyInput): Decision {
     }
 
     case "new_booking_request": {
-      const choice = chooseService(input, i.service_reference, {
-        allowUsual: false,
-      });
+      // "Actually 6 would be better": the same booking request, changed.
+      const revising = openRequest("booking_request");
+      const revisedService =
+        !i.service_reference && revising?.serviceId
+          ? input.services.find((s) => s.id === revising.serviceId)
+          : undefined;
+      const choice: ServiceChoice = revisedService
+        ? { kind: "found", service: revisedService }
+        : chooseService(input, i.service_reference, { allowUsual: false });
       if (choice.kind === "ambiguous") {
         return clarify("service", i.intent, {
           services: choice.options.slice(0, 3).map((s) => s.name),
         });
       }
       const service = choice.service;
-      const day = resolveDateReference(i.requested_date, input.today);
+      const day =
+        resolveDateReference(i.requested_date, input.today) ??
+        (revising?.preferredDate && i.requested_time && !i.clarification_needed
+          ? ({ kind: "day", date: revising.preferredDate } as const)
+          : null);
       if (!day || day.kind !== "day") {
         return clarify("date", i.intent);
       }
@@ -693,12 +758,28 @@ export function decide(input: PolicyInput): Decision {
     }
 
     case "reschedule_request": {
-      const match = resolveBookingReference(
-        i.referenced_booking,
-        input.upcoming,
-        input.today,
-        input.timeZone,
+      // A follow-up to a move still waiting for the owner is about the same
+      // booking, unless it names a different one.
+      const revising = openRequest("reschedule_request");
+      // "My next one", or a day or time, says which booking: no borrowing.
+      const saysWhich = Boolean(
+        i.referenced_booking &&
+        (i.referenced_booking.kind !== "unspecified" ||
+          i.referenced_booking.date ||
+          i.referenced_booking.time),
       );
+      const revisedBooking =
+        revising && !saysWhich
+          ? input.upcoming.find((b) => b.id === revising.bookingId)
+          : undefined;
+      const match: ReturnType<typeof resolveBookingReference> = revisedBooking
+        ? { kind: "found", booking: revisedBooking }
+        : resolveBookingReference(
+            i.referenced_booking,
+            input.upcoming,
+            input.today,
+            input.timeZone,
+          );
       if (match.kind === "none") return ownerTask("no_booking_found");
       if (match.kind === "several") {
         return clarify("booking", i.intent, {
@@ -714,11 +795,43 @@ export function decide(input: PolicyInput): Decision {
       );
 
       let day = resolveDateReference(i.requested_date, input.today);
+      if (
+        !day &&
+        revisedBooking &&
+        revising?.preferredDate &&
+        i.requested_time &&
+        !relative &&
+        !i.clarification_needed
+      ) {
+        // "Actually 6 would be better": 6 on the day they already asked
+        // for. "Later" is still asked about: later that day, or another?
+        day = { kind: "day", date: revising.preferredDate };
+      }
+      // "Earlier tomorrow", about tomorrow's booking: earlier that day.
+      const namedDay = resolveDateReference(
+        i.referenced_booking?.date ?? null,
+        input.today,
+      );
+      if (
+        !day &&
+        relative &&
+        namedDay?.kind === "day" &&
+        namedDay.date === bookingDate
+      ) {
+        day = { kind: "day", date: bookingDate };
+      }
       if (!day) {
         // "Can we do later?" could be later today or another day: ask. A
         // plain time with no day ("after 4 instead") means the same day.
         if (relative || !i.requested_time || i.clarification_needed) {
-          return clarify(relative ? "later" : "date", i.intent);
+          return clarify(
+            relative
+              ? i.requested_time!.constraint === "earlier"
+                ? "earlier"
+                : "later"
+              : "date",
+            i.intent,
+          );
         }
         day = { kind: "day", date: bookingDate };
       }

@@ -10,6 +10,7 @@ import type { Interpretation } from "@/domain/messages/interpretation";
 import {
   type Decision,
   decide,
+  type OpenRequest,
   type PendingClarification,
   scheduleWindow,
   type Service,
@@ -364,9 +365,10 @@ async function processClaimedRun(
   }
 
   const pending = readClarification(conversation.clarification);
-  const originalText = pending
-    ? await originalMessageText(db, pending.messageId)
-    : null;
+  const [originalText, openRequests] = await Promise.all([
+    pending ? originalMessageText(db, pending.messageId) : null,
+    loadOpenRequests(db, business.id, conversation.id, message.id),
+  ]);
 
   const result = await deps.interpreter.interpret({
     message: message.body,
@@ -382,6 +384,9 @@ async function processClaimedRun(
       pending && originalText
         ? { originalMessage: originalText, question: pending.question }
         : null,
+    openRequest: openRequests[0]?.originalMessage
+      ? { originalMessage: openRequests[0].originalMessage }
+      : null,
   });
 
   const usage = await recordUsage(deps, business.id, message.id, runId, result);
@@ -476,6 +481,7 @@ async function processClaimedRun(
         automation.cancellationAcknowledgementsEnabled,
     },
     pendingClarification: pending,
+    openRequests: openRequests.map((r) => r.request),
     services: context.services,
     upcoming,
     usualServiceId,
@@ -570,6 +576,56 @@ async function processClaimedRun(
 // ---------------------------------------------------------------------------
 
 export type RunContext = Awaited<ReturnType<typeof loadRunContext>>;
+
+/**
+ * This conversation's requests still waiting for the owner, newest first,
+ * with the words that raised them: a follow-up may be revising one.
+ */
+async function loadOpenRequests(
+  db: Db,
+  businessId: string,
+  conversationId: string,
+  messageId: string,
+): Promise<{ request: OpenRequest; originalMessage: string | null }[]> {
+  const { data, error } = await db
+    .from("pending_actions")
+    .select(
+      "id, kind, customer_id, booking_id, understood, message:messages ( body )",
+    )
+    .eq("business_id", businessId)
+    .eq("conversation_id", conversationId)
+    .eq("status", "open")
+    .in("kind", [
+      "booking_request",
+      "reschedule_request",
+      "cancellation_request",
+    ])
+    .neq("source_message_id", messageId)
+    .order("created_at", { ascending: false })
+    .limit(5);
+  if (error) throw new PipelineError(error.message);
+  return data.map((row) => {
+    const understood = (row.understood ?? {}) as Record<string, unknown>;
+    const date = understood.preferred_date;
+    return {
+      request: {
+        id: row.id,
+        kind: row.kind as OpenRequest["kind"],
+        customerId: row.customer_id,
+        bookingId: row.booking_id,
+        preferredDate:
+          typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date)
+            ? date
+            : null,
+        serviceId:
+          typeof understood.service_id === "string"
+            ? understood.service_id
+            : null,
+      },
+      originalMessage: row.message?.body ?? null,
+    };
+  });
+}
 
 async function loadRunContext(db: Db, runId: string) {
   const { data: run, error } = await db

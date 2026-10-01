@@ -321,7 +321,8 @@ How Pingflow handles an inbound message. AI reads the words; deterministic code 
 - AI only interprets: what the customer wants, dates and times as they said them, and who and which booking they seem to mean. It never decides identity, availability, permissions or approval, and never changes a booking.
 - Automatic, only for a customer recognised by their number and only when the matching automation is on: when their next booking is; what's free (up to three real times from the schedule); acknowledging a cancellation request. Fixed templates with checked data.
 - Always owner approval: new bookings, reschedules and cancellations. Pingflow proposes a real free time where there is one.
-- Unclear: one clarifying question, then the owner.
+- Unclear: one clarifying question, then the owner. If the answer still isn't clear, the customer is told once that it's been passed on.
+- A follow-up that changes a request still waiting ("actually 6 would be better") replaces it; the owner only ever sees the latest version. The owner's own change to that booking, or booking that customer themselves, closes the request.
 - Unknown numbers learn nothing private. An availability question from one becomes a draft for the owner.
 - A parent or carer linked to several customers names the person, or is asked once.
 - Free-form replies are drafts the owner sends.

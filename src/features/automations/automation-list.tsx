@@ -51,7 +51,13 @@ const presets: { key: AutomationKey; title: string; description: string }[] = [
 
 // Opinionated presets, each simply on or off. Changes save straight away;
 // if saving fails, the switch goes back and says why.
-export function AutomationList({ initial }: { initial: AutomationState }) {
+export function AutomationList({
+  initial,
+  whatsappConnected,
+}: {
+  initial: AutomationState;
+  whatsappConnected: boolean;
+}) {
   const toast = useToast();
   const [state, setOptimistic] = useOptimistic(
     initial,
@@ -130,29 +136,50 @@ export function AutomationList({ initial }: { initial: AutomationState }) {
         })}
       </ul>
 
-      <section
-        aria-labelledby="always-ask"
-        className="flex items-start justify-between gap-4 rounded-lg bg-sunken px-4 py-4 sm:px-5"
-      >
-        <div>
-          <h2 id="always-ask" className="text-ui font-medium text-ink">
-            Booking changes always ask you first
-          </h2>
-          <p className="mt-0.5 text-ui-sm text-ink-2">
-            New bookings, moves and cancellations wait for your approval in
-            Attention. This can’t be turned off.
-          </p>
-        </div>
-        <span className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-sm bg-surface px-2.5 text-ui-sm font-medium text-ink-2">
-          <Lock aria-hidden className="size-3.5" />
-          Always on
-        </span>
-      </section>
+      <AlwaysOn
+        id="always-ask"
+        title="Booking changes always ask you first"
+        description="New bookings, moves and cancellations wait for your approval in Attention. This can’t be turned off."
+      />
+      <AlwaysOn
+        id="one-question"
+        title="Unclear messages get one question"
+        description="If a message isn’t clear, Pingflow asks one short question. If the answer still isn’t clear, it tells the customer it’s been passed to you and leaves it in Attention."
+      />
 
       <p className="text-ui-sm text-ink-3">
-        WhatsApp isn’t connected yet, so nothing is sent to customers. Pingflow
-        records what it would have sent in Activity.
+        {whatsappConnected
+          ? "These go out on WhatsApp. Activity shows each one, and whether it was sent."
+          : "WhatsApp isn’t connected yet, so nothing is sent to customers. Pingflow records what it would have sent in Activity."}
       </p>
     </div>
+  );
+}
+
+function AlwaysOn({
+  id,
+  title,
+  description,
+}: {
+  id: string;
+  title: string;
+  description: string;
+}) {
+  return (
+    <section
+      aria-labelledby={id}
+      className="flex items-start justify-between gap-4 rounded-lg bg-sunken px-4 py-4 sm:px-5"
+    >
+      <div>
+        <h2 id={id} className="text-ui font-medium text-ink">
+          {title}
+        </h2>
+        <p className="mt-0.5 text-ui-sm text-ink-2">{description}</p>
+      </div>
+      <span className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-sm bg-surface px-2.5 text-ui-sm font-medium text-ink-2">
+        <Lock aria-hidden className="size-3.5" />
+        Always on
+      </span>
+    </section>
   );
 }
