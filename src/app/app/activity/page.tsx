@@ -93,9 +93,9 @@ export default async function ActivityPage() {
                           {entry.quote}
                         </p>
                       )}
-                      {entry.simulated && (
+                      {entry.notSent && (
                         <p className="mt-1 text-ui-sm text-ink-3">
-                          Recorded, not sent: WhatsApp isn’t connected yet.
+                          Recorded, not sent: {entry.notSent}.
                         </p>
                       )}
                     </div>

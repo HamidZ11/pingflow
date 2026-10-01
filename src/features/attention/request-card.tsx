@@ -116,7 +116,7 @@ function Shell({
               {item.headline}
             </h3>
             <p className="mt-0.5 text-ui-sm text-ink-3">
-              WhatsApp ·{" "}
+              {item.message?.simulated ? "Simulated" : "WhatsApp"} ·{" "}
               <time dateTime={item.receivedAt}>{item.receivedLabel}</time>
             </p>
           </div>

@@ -20,7 +20,7 @@ export type AutomationState = Record<AutomationKey, boolean> & {
 const presets: { key: AutomationKey; title: string; description: string }[] = [
   {
     key: "reminders",
-    title: "Appointment reminders",
+    title: "Booking reminders",
     description: "A short reminder to the customer before each booking.",
   },
   {

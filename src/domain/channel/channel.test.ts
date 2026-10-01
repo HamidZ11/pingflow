@@ -1,7 +1,11 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { deliveryLabel } from "@/domain/channel/delivery";
+import {
+  deliveryLabel,
+  simulatedNote,
+  simulatedReason,
+} from "@/domain/channel/delivery";
 import { contentBody } from "@/domain/channel/inbound";
 import {
   describeNotSent,
@@ -202,5 +206,52 @@ describe("the message domain knows nothing about Meta", () => {
         /lib\/whatsapp|features\/whatsapp|graph\.facebook|phone_number_id|wamid/,
       );
     }
+  });
+});
+
+describe("why a recorded message wasn't sent", () => {
+  const inbound = [
+    {
+      conversationId: "c-sim",
+      source: "simulator" as const,
+      sentAt: "2026-10-01T09:00:00Z",
+    },
+    {
+      conversationId: "c-wa",
+      source: "whatsapp" as const,
+      sentAt: "2026-10-01T09:00:00Z",
+    },
+  ];
+  const at = (conversationId: string) => ({
+    conversationId,
+    sentAt: "2026-10-01T09:01:00Z",
+  });
+
+  it("a simulator conversation says so, connected or not", () => {
+    const reason = simulatedReason(at("c-sim"), inbound);
+    expect(reason).toBe("simulated_conversation");
+    expect(simulatedNote(reason, true)).toBe("it’s a simulated conversation");
+    expect(simulatedNote(reason, false)).toBe("it’s a simulated conversation");
+  });
+
+  it("otherwise WhatsApp wasn't connected: then, or still", () => {
+    const reason = simulatedReason(at("c-wa"), inbound);
+    expect(reason).toBe("not_connected");
+    expect(simulatedNote(reason, false)).toBe("WhatsApp isn’t connected yet");
+    expect(simulatedNote(reason, true)).toBe(
+      "WhatsApp wasn’t connected at the time",
+    );
+  });
+
+  it("only messages before it, in its own conversation, count", () => {
+    expect(
+      simulatedReason(
+        { conversationId: "c-sim", sentAt: "2026-10-01T08:00:00Z" },
+        inbound,
+      ),
+    ).toBe("not_connected");
+    expect(
+      simulatedReason({ conversationId: null, sentAt: "x" }, inbound),
+    ).toBe("not_connected");
   });
 });

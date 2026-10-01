@@ -60,3 +60,16 @@ export async function open(page: Page, path: string) {
     await page.goto(path);
   }
 }
+
+/**
+ * Console noise from the test itself, not the app: WebKit reports a fetch
+ * that a scripted navigation cancels (a prefetch, or a live refresh still
+ * in flight) as "access control checks" or "Load failed", and Next.js then
+ * falls back to a normal navigation.
+ */
+export function isNavigationNoise(message: string) {
+  return (
+    /due to access control checks/.test(message) ||
+    /Failed to fetch RSC payload .*TypeError: Load failed/.test(message)
+  );
+}

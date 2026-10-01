@@ -104,7 +104,13 @@ type Customer = {
   contact: string | null;
 };
 
-type InboundMessage = { body: string; time: string; dateTime: string };
+type InboundMessage = {
+  body: string;
+  time: string;
+  dateTime: string;
+  /** Sent from the development simulator, not received on WhatsApp. */
+  simulated: boolean;
+};
 
 type ServiceSummary = { name: string; length: string; buffer: string | null };
 
@@ -236,7 +242,7 @@ export async function loadAttention(
          service:services ( name, duration_minutes )
        ),
        conversation:conversations ( contact:contacts ( display_name, phone_e164 ) ),
-       message:messages ( body, sent_at )`,
+       message:messages ( body, sent_at, source )`,
     )
     .eq("business_id", owner.business.id)
     .eq("status", "open")
@@ -277,6 +283,7 @@ export async function loadAttention(
           body: row.message.body,
           time: formatRelativeDateTime(new Date(row.message.sent_at), now, tz),
           dateTime: row.message.sent_at,
+          simulated: row.message.source === "simulator",
         }
       : null;
     const base = {

@@ -4,6 +4,7 @@ import {
   type Relationship,
   relationshipLabels,
 } from "@/domain/contacts/phone";
+import { simulatedNote, simulatedReason } from "@/domain/channel/delivery";
 import { describeSeries } from "@/domain/schedule/series";
 import {
   formatDateTime,
@@ -11,6 +12,10 @@ import {
   formatRelativeDateTime,
 } from "@/domain/time/format";
 import { dateKeyOf, type Weekday } from "@/domain/time/zoned";
+import {
+  loadInboundSources,
+  whatsappConnected,
+} from "@/features/whatsapp/connection-state";
 import type { Owner } from "@/lib/auth/session";
 
 // Customers: who they are, who messages for them, and their bookings. A
@@ -179,7 +184,9 @@ export async function loadCustomer(owner: Owner, id: string, now = new Date()) {
     conversationIds.length
       ? owner.supabase
           .from("messages")
-          .select("id, direction, author, body, delivery, source, sent_at")
+          .select(
+            "id, direction, author, body, delivery, source, sent_at, conversation_id",
+          )
           .eq("business_id", owner.business.id)
           .in("conversation_id", conversationIds)
           .order("sent_at", { ascending: false })
@@ -196,6 +203,18 @@ export async function loadCustomer(owner: Owner, id: string, now = new Date()) {
     if (r.error) throw r.error;
 
   const paused = conversations.find((x) => x.automation_paused_at);
+
+  // Why a recorded message wasn't sent: a simulated conversation, or
+  // WhatsApp not connected (then, or still).
+  const anySimulated = (messages.data ?? []).some(
+    (m) => m.delivery === "simulated",
+  );
+  const [connected, inbound] = anySimulated
+    ? await Promise.all([
+        whatsappConnected(owner),
+        loadInboundSources(owner, conversationIds),
+      ])
+    : [false, []];
 
   return {
     id: c.id,
@@ -237,7 +256,17 @@ export async function loadCustomer(owner: Owner, id: string, now = new Date()) {
         direction: m.direction,
         author: m.author,
         body: m.body,
-        simulated: m.delivery === "simulated",
+        /** Recorded rather than sent, and why. */
+        notSent:
+          m.delivery === "simulated"
+            ? simulatedNote(
+                simulatedReason(
+                  { conversationId: m.conversation_id, sentAt: m.sent_at },
+                  inbound,
+                ),
+                connected,
+              )
+            : null,
         delivery: m.delivery,
         /** Came from the development simulator, not a real WhatsApp message. */
         simulatedInbound: m.direction === "inbound" && m.source === "simulator",

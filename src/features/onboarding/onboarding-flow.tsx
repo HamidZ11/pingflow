@@ -382,7 +382,7 @@ export function OnboardingFlow() {
                       id="pref-reminders"
                       className="text-ui font-medium text-ink"
                     >
-                      Send appointment reminders
+                      Send booking reminders
                     </p>
                     <p
                       id="pref-reminders-hint"
@@ -397,7 +397,7 @@ export function OnboardingFlow() {
                     onChange={(on) =>
                       setDraft((d) => ({ ...d, remindersEnabled: on }))
                     }
-                    label="Send appointment reminders"
+                    label="Send booking reminders"
                     describedBy="pref-reminders-hint"
                   />
                 </div>

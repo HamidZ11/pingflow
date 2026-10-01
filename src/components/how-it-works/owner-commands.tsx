@@ -54,26 +54,25 @@ const commands: Array<{ id: string; ask: string; reply: ReactNode }> = [
     ask: "Block Friday afternoon.",
     reply: (
       <p>
-        Done. Friday 16 Oct is blocked from{" "}
-        <span className="tabular-nums">12:00</span>. Your 3 lessons that
-        afternoon stay as they are.
+        I can’t block Friday 16 Oct{" "}
+        <span className="tabular-nums">12:00–17:00</span>: Omar Ali is booked at{" "}
+        <span className="tabular-nums">15:30</span>. Nothing was changed.
       </p>
     ),
   },
   {
     id: "move",
-    ask: "Move Sarah to 4.",
+    ask: "Move Sarah to 4 on Friday.",
     reply: (
       <>
         <p>
-          Sarah’s next lesson is Fri 16 Oct at{" "}
-          <span className="tabular-nums">17:00</span>. Friday{" "}
-          <span className="tabular-nums">16:00</span> isn’t free: Omar’s lesson
-          runs until <span className="tabular-nums">16:30</span>.
+          Friday 16 Oct at <span className="tabular-nums">16:00</span> isn’t
+          available. That time overlaps another booking.
         </p>
         <p className="mt-1.5">
-          Thursday <span className="tabular-nums">16:00</span> is free. Move her
-          there?
+          You’re free at <span className="tabular-nums">12:00</span>,{" "}
+          <span className="tabular-nums">13:00</span> or{" "}
+          <span className="tabular-nums">14:00</span>.
         </p>
       </>
     ),
@@ -173,19 +172,6 @@ export function OwnerCommands({ intro }: { intro: ReactNode }) {
               <Bubble direction="in" sender="Pingflow" time={sentAt}>
                 {command.reply}
               </Bubble>
-              {command.id === "move" && (
-                <ul
-                  aria-label="Reply options"
-                  className="divide-y divide-line overflow-hidden rounded-md bg-surface text-center text-ui-sm"
-                >
-                  <li className="flex h-9 items-center justify-center font-medium text-ink">
-                    Move to Thu 16:00
-                  </li>
-                  <li className="flex h-9 items-center justify-center text-ink-2">
-                    Other times
-                  </li>
-                </ul>
-              )}
             </div>
           </div>
         </ChatPanel>

@@ -6,7 +6,7 @@ import { runWhatsAppWork } from "../src/features/whatsapp/worker";
 import { FixtureMessageInterpreter } from "../src/lib/ai/fixture-interpreter";
 import { FakeMessagingTransport } from "../src/lib/whatsapp/fake-transport";
 import { adminClient, hasKeys } from "./database/db";
-import { open, seedDemo, signIn } from "./helpers";
+import { isNavigationNoise, open, seedDemo, signIn } from "./helpers";
 
 // The owner's side of WhatsApp: Settings in each connection state, and the
 // Attention items the channel adds (a voice note, a message that couldn't
@@ -259,5 +259,5 @@ test("Attention shows a voice note and a message WhatsApp couldn't take", async 
     /Pingflow couldn’t send its reply to Sarah Khan\. WhatsApp couldn’t deliver to this number\./,
   );
   await expect(activity).toContainText("Not sent");
-  expect(errors).toEqual([]);
+  expect(errors.filter((e) => !isNavigationNoise(e))).toEqual([]);
 });

@@ -11,7 +11,7 @@ import {
 } from "../src/lib/ai/fixture-interpreter";
 import type { MessageInterpreter } from "../src/lib/ai/interpreter";
 import { adminClient, hasKeys } from "./database/db";
-import { open, seedDemo, signIn } from "./helpers";
+import { isNavigationNoise, open, seedDemo, signIn } from "./helpers";
 
 // Messages processed by the pipeline (as the WhatsApp webhook will), then
 // answered by the owner in the browser: a new booking, a cancellation, a
@@ -186,6 +186,7 @@ test("the owner answers pipeline-made requests and messages from Attention", asy
   await expect(page.getByRole("article")).toContainText("wants to move");
 
   // Activity tells each story.
+  await page.waitForLoadState("networkidle");
   await open(page, "/app/activity");
   const activity = page.locator("main ol");
   for (const line of [
@@ -206,7 +207,7 @@ test("the owner answers pipeline-made requests and messages from Attention", asy
     /\b(AI|GPT|OpenAI|model|tokens|confidence)\b/,
   );
 
-  expect(errors).toEqual([]);
+  expect(errors.filter((e) => !isNavigationNoise(e))).toEqual([]);
 });
 
 test("the message simulator doesn't exist outside development", async ({

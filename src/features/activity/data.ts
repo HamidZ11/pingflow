@@ -4,6 +4,7 @@ import {
   type ActivityKind,
   describeActivity,
 } from "@/domain/activity/describe";
+import { simulatedNote, simulatedReason } from "@/domain/channel/delivery";
 import type { ContentType } from "@/domain/channel/inbound";
 import { formatPhone } from "@/domain/contacts/phone";
 import {
@@ -12,6 +13,10 @@ import {
   formatTime,
 } from "@/domain/time/format";
 import { addMinutes, dateKeyOf } from "@/domain/time/zoned";
+import {
+  loadInboundSources,
+  whatsappConnected,
+} from "@/features/whatsapp/connection-state";
 import type { Owner } from "@/lib/auth/session";
 
 export type ActivityEntry = {
@@ -22,6 +27,8 @@ export type ActivityEntry = {
   text: string;
   quote: string | null;
   simulated: boolean;
+  /** Why a simulated message was recorded rather than sent. */
+  notSent: string | null;
   delivery: string | null;
   customerId: string | null;
 };
@@ -57,7 +64,7 @@ export async function loadActivity(
        customer:customers ( full_name ),
        booking:bookings ( service:services ( name ) ),
        message:messages (
-         body, delivery, content_type,
+         body, delivery, content_type, sent_at, conversation_id,
          conversation:conversations ( contact:contacts ( display_name, phone_e164 ) )
        ),
        action:pending_actions (
@@ -70,6 +77,19 @@ export async function loadActivity(
     .order("seq", { ascending: false })
     .limit(400);
   if (error) throw error;
+
+  // Why each simulated message wasn't sent, from its own conversation.
+  const simulatedIn = [
+    ...new Set(
+      data.flatMap((e) =>
+        e.message?.delivery === "simulated" ? [e.message.conversation_id] : [],
+      ),
+    ),
+  ];
+  const [connected, inbound] = await Promise.all([
+    whatsappConnected(owner),
+    loadInboundSources(owner, simulatedIn),
+  ]);
 
   const days = new Map<string, ActivityEntry[]>();
   for (const e of data.slice().reverse()) {
@@ -105,6 +125,20 @@ export async function loadActivity(
       text: line.text,
       quote: line.quote,
       simulated: line.simulated,
+      notSent: line.simulated
+        ? simulatedNote(
+            e.message
+              ? simulatedReason(
+                  {
+                    conversationId: e.message.conversation_id,
+                    sentAt: e.message.sent_at,
+                  },
+                  inbound,
+                )
+              : "not_connected",
+            connected,
+          )
+        : null,
       delivery: line.delivery,
       customerId: e.customer_id,
     });

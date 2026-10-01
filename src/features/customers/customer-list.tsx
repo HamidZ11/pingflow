@@ -114,7 +114,7 @@ export function CustomerList({ customers }: { customers: CustomerRow[] }) {
                       <td className="px-4 py-3">
                         <Link
                           href={`/app/customers/${c.id}`}
-                          className="font-medium text-ink after:absolute after:inset-0 focus-visible:outline-none after:focus-visible:outline-2 after:focus-visible:-outline-offset-2 after:focus-visible:outline-ink"
+                          className="font-medium text-ink after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-ink"
                         >
                           {c.name}
                         </Link>

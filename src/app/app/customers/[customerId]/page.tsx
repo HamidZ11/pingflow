@@ -141,9 +141,9 @@ export default async function CustomerPage({
                     >
                       <p>{m.body}</p>
                     </Bubble>
-                    {m.simulated ? (
+                    {m.notSent ? (
                       <span className="mt-1 text-label text-ink-3">
-                        Not sent: WhatsApp isn’t connected yet
+                        Not sent: {m.notSent}
                       </span>
                     ) : (
                       m.direction === "outbound" &&
