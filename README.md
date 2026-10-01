@@ -1,232 +1,324 @@
 # Pingflow
 
-Keep using WhatsApp. Pingflow handles the admin behind it.
+**Keep using WhatsApp. Pingflow handles the admin behind it.**
 
-Product scope and visual direction live in `PRODUCT.md` and `DESIGN.md`.
+Pingflow is a WhatsApp-first operations assistant for solo,
+appointment-based service businesses: driving instructors, tutors,
+personal trainers, cleaners, groomers. Customers keep messaging the
+business on WhatsApp as they always have. Pingflow reads those messages,
+checks them against the business's real schedule, and handles the routine
+admin, while anything that changes a booking waits for the owner.
+
+Product scope lives in [`PRODUCT.md`](PRODUCT.md) and visual direction in
+[`DESIGN.md`](DESIGN.md). The MVP is build-complete; a hosted pilot needs
+three setup steps (see [Production and pilot](#production-and-pilot)).
+
+## What it does
+
+A customer messages things like:
+
+- "When's my next lesson?"
+- "Are you free Friday at 4?"
+- "Can I move my booking?"
+- "I need to cancel."
+- "Can I book next week?"
+
+Pingflow works out what they mean, checks who they are and what's really
+in the schedule, and then does one of three things:
+
+- **replies automatically** when it's safe: their next booking, or real
+  free times;
+- **asks one short question** when something's missing ("What day would
+  suit you?");
+- **sends a request to the owner** to approve: new bookings, moves and
+  cancellations, with a real free time already proposed.
+
+The owner can use WhatsApp too. From the number set up as theirs, they can
+ask "Who have I got tomorrow?", "When is Sarah booked?" or "Am I free at
+3?", and change things: "Move Sarah to Friday at 4", "Cancel Sarah's
+lesson", "Block Thursday afternoon". Only that configured owner number can
+do this; everyone else is treated as a customer.
+
+### The app
+
+- **Attention**: the requests and messages that need the owner, each with
+  what the customer said, what Pingflow suggests and the answers (approve,
+  choose another time, decline, or "I'll handle it").
+- **Schedule**: day and week views of bookings, blocked time and working
+  hours (regular weekly hours, or flexible); adding, moving and cancelling
+  bookings; blocking time.
+- **Customers**: customers, the contacts who message for them (a parent,
+  say), their upcoming and past bookings and recent messages.
+- **Activity**: a timeline of everything Pingflow and the owner did:
+  messages, requests, approvals, bookings, confirmations, reminders, and
+  whether each message was actually sent.
+- **Automations**: the routine things Pingflow does on its own, each on or
+  off: reminders, confirmations, availability replies, "when is my
+  booking?" replies, cancellation acknowledgements.
+- **Settings**: the business, services (length and the time needed
+  after), working hours, WhatsApp and the owner's number.
+
+## How it decides
+
+**AI interprets language. Deterministic code decides what is true and what
+actions are allowed.**
+
+- **The model** (OpenAI's `gpt-5.6-luna`) only reads words: the intent,
+  and the dates, times, people, services and bookings as the message put
+  them. It returns a strict, validated structure.
+- **The application** does everything else: identifies the sender from
+  their number, finds the booking, checks availability (working hours,
+  minus bookings, blocked time and the time needed between them), applies
+  the policy, makes changes in database transactions, writes every
+  customer message from fixed templates filled with checked data, and
+  schedules reminders.
+
+The model never changes the database, and no AI-written message is ever
+sent automatically.
+
+### Customer policy
+
+| Situation                                                                   | What happens                                                         |
+| --------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| A known customer asks when their next booking is, or what's free            | Automatic reply, if that automation is on                            |
+| Confirmations, reminders, acknowledging a cancellation request              | Automatic, from fixed templates, if switched on                      |
+| A new booking, a move or a cancellation                                     | Waits for the owner's approval in Attention                          |
+| Anything else (questions, complaints, things needing a free-form reply)     | Goes to the owner; any draft is built from checked data, never sent  |
+| Not clear                                                                   | One short question; still unclear, it goes to the owner              |
+| An unknown number asking about a booking, or a parent not saying which child | Nothing private is shared; it goes to the owner, or asks which child |
+
+A follow-up like "Actually 6 would be better" changes the request that's
+still waiting rather than adding another. If the owner moves, cancels or
+books something themselves, waiting requests about it close. Every
+approval is checked again as it's written, so a time taken in the
+meantime is never booked.
+
+## Architecture
+
+**Stack:** Next.js 16 (App Router) with React 19 and TypeScript, Tailwind
+CSS 4, Supabase (Postgres with row level security, Auth with email
+magic links, Realtime), the OpenAI Responses API with `gpt-5.6-luna`, the
+Meta WhatsApp Cloud API (Graph API v26.0), Zod for structured outputs,
+Vitest and Playwright for tests.
+
+A customer's message:
+
+```
+Customer on WhatsApp
+  → Meta webhook (signature checked) → stored once (whatsapp_events)
+  → message pipeline: stored once, one at a time per conversation
+  → AI interpretation (structure only) → usage recorded
+  → deterministic policy: identity, bookings, availability, rules
+  → one transaction: reply, request for the owner, or nothing; Activity
+  → outbox (message_deliveries) → worker → send policy → WhatsApp
+  → delivery statuses → Activity, usage ledger
+```
+
+The owner's command:
+
+```
+Owner on WhatsApp (their configured number)
+  → same webhook and pipeline → owner-command interpreter
+  → deterministic schedule and customer rules
+  → one transaction: the change (re-checked), the reply → WhatsApp
+```
+
+### Code layout
+
+- `src/domain/`: plain TypeScript rules with no I/O: the availability
+  engine, dates and times, the customer message policy
+  (`messages/policy.ts`), owner commands (`owner/`), request planning,
+  message templates, reminders, channel rules (the 24-hour window, the
+  send policy) and Activity wording.
+- `src/features/<area>/`: data loading, server actions and components for
+  each app area; `features/messages/` is the inbound pipeline and
+  `features/whatsapp/` the webhook ingestion, worker and dispatcher.
+- `src/lib/ai/`: the interpreters, prompts, model settings and prices.
+  `src/lib/whatsapp/`: the Cloud API transport, webhook signatures and
+  parsing. `src/lib/supabase/`: browser, server and service clients. All
+  server-side only, except the browser client.
+- `src/app/`: the public site (`(marketing)/`), sign-in and onboarding
+  (`(auth)/`), the signed-in app (`app/`) and the API routes (`api/`).
+- `supabase/migrations/`: the schema, row level security and the database
+  functions that change several rows at once. Functions run with their
+  caller's permissions, so row level security applies inside them too; a
+  database guard re-checks every booking and block against the schedule as
+  it's written.
 
 ## Running locally
 
-You need Node 20.12+, pnpm (the version is pinned in `package.json`) and Docker Desktop (for the local Supabase stack).
+You need Node 20.9 or later (the scripts use Node's `--env-file` flags, so
+a current LTS is simplest), pnpm (pinned in `package.json`) and Docker
+Desktop for the local Supabase stack.
 
 ```sh
 pnpm install
-pnpm db:start           # local Supabase: Postgres, Auth, Realtime, mail catcher
+pnpm db:start            # local Supabase: Postgres, Auth, Realtime, mail catcher
 cp .env.example .env.local
 ```
 
-`pnpm db:start` prints the local URL and keys. Put them in `.env.local`:
+`pnpm db:start` prints the local URL and keys: put them in `.env.local`
+(`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`,
+`SUPABASE_SECRET_KEY`), with `DEMO_OWNER_EMAIL` and, for the "Open test
+inbox" link, `LOCAL_MAIL_INBOX_URL=http://127.0.0.1:54324`. `.env.example`
+explains every variable; `.env.local` is git-ignored.
 
-| Variable | What it is |
-| --- | --- |
-| `NEXT_PUBLIC_SUPABASE_URL` | API URL, `http://127.0.0.1:54321` locally |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Publishable key. Safe in the browser; row level security protects the data |
-| `SUPABASE_SECRET_KEY` | Secret key, server-side only: processing inbound messages, the internal usage ledger and the demo seed. Never expose it to the browser |
-| `OPENAI_API_KEY` | Optional, server-side only: reading customers' messages. Without it, messages are stored and go to the owner unread. Never expose it to the browser |
-| `OPENAI_MESSAGE_MODEL` | Optional. The model for reading messages, default `gpt-5.6-luna` |
-| `OPENAI_MESSAGE_REASONING_EFFORT` | Optional. `none`, `minimal`, `low` (default) or `medium` |
-| `PINGFLOW_MESSAGE_INTERPRETER` | Development only. `fixture` reads the sample messages without calling OpenAI; ignored in production |
-| `WHATSAPP_VERIFY_TOKEN` | Optional, server-side only: the webhook's subscription handshake. Any long random string, also entered in Meta's App Dashboard |
-| `META_APP_SECRET` | Optional, server-side only: the Meta app's App Secret. Every webhook POST is checked against it |
-| `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_WABA_ID` | Optional, server-side only: the developer connection (one test or business number) |
-| `WHATSAPP_WORKER_SECRET` | Optional, server-side only: authorises the scheduled worker route |
-| `DEMO_OWNER_EMAIL` | The email the demo business is created for |
-| `LOCAL_MAIL_INBOX_URL` | Local development only: the mail catcher, `http://127.0.0.1:54324`. Adds an "Open test inbox" link to "Check your email" in `pnpm dev`; never shown in a production build |
-
-Then:
+- Secrets stay on the server: only `NEXT_PUBLIC_` values reach the
+  browser, and in production the server refuses to start if a
+  secret-looking variable has that prefix.
+- OpenAI is optional: without `OPENAI_API_KEY`, messages are stored and go
+  to the owner unread. For the sample messages without a key, set
+  `PINGFLOW_MESSAGE_INTERPRETER=fixture` (development only).
+- WhatsApp is optional: nothing is needed until you connect a number.
 
 ```sh
-pnpm db:reset           # apply supabase/migrations to a fresh database
-pnpm db:seed            # demo driving instructor for DEMO_OWNER_EMAIL
-pnpm dev                # http://localhost:3000
+pnpm db:reset            # apply supabase/migrations to a fresh database
+pnpm db:seed             # a demo driving instructor for DEMO_OWNER_EMAIL
+pnpm dev                 # http://localhost:3000
 ```
 
-Sign in at `/sign-in` with the demo email. Emails don't leave your machine: they land in the local mail catcher at http://127.0.0.1:54324 (the "Open test inbox" link on "Check your email" goes there in development).
+Sign in at `/sign-in` with the demo email; the link lands in the local
+mail catcher (http://127.0.0.1:54324). `pnpm db:seed you@example.com
+--flexible` seeds any email, with flexible hours. The seed replaces that
+account's business and refuses a non-local database unless you pass
+`--allow-remote`.
 
-`pnpm db:seed you@example.com --flexible` creates the same demo with flexible hours.
+- **Schema changes:** add a new migration (they only move forward), apply
+  it with `pnpm exec supabase migration up` or rebuild with
+  `pnpm db:reset`, then run `pnpm db:types`. Studio is at
+  http://127.0.0.1:54323.
+- **Message simulator:** in `pnpm dev`, `/app/dev/messages` sends a
+  pretend WhatsApp message through the real pipeline and shows the
+  reading, the decision, the reply and the cost. "You, the owner" sends an
+  owner command (the demo's owner number is +44 7700 900001). It returns
+  404 outside development.
 
-## Database
-
-- `supabase/migrations/` holds the schema: tables, row level security, the Attention realtime feed and the functions that change several rows at once (approving a reschedule, creating a customer with their first booking, saving the services list, moving or cancelling a booking, onboarding). Every function runs as the signed-in user, so the same policies apply inside them.
-- Bookings and blocked time are re-checked as they're written: a database guard rejects a booking that collides with another booking, its travel time or blocked time, one business at a time. The app's availability engine decides what to offer; the guard makes sure nothing slips through between offering and saving.
-- Migrations only move forward: add a new file with a later timestamp rather than editing one that has been applied. Locally, `pnpm exec supabase migration up` applies new files to your existing database; `pnpm db:reset` rebuilds it from scratch (then reseed).
-- After changing the schema, run `pnpm db:types` (regenerates `src/lib/supabase/database.types.ts`).
-- Studio is at http://127.0.0.1:54323.
-- The demo seed is relative to today in Europe/London. Run `pnpm db:seed you@example.com` to create it for any email; it replaces that account's business. It refuses to run against a non-local Supabase unless you pass `--allow-remote`.
-
-## Schedule modes
-
-A business has regular hours (bookable inside its weekly pattern) or flexible hours (bookable any time that's free, between 06:00 and 22:00). The mode is stored on the business (`schedule_mode`); the weekly pattern is kept in flexible mode for switching back. The bookable day for flexible hours is one constant, `FLEXIBLE_BOOKABLE_DAY` in `src/domain/availability/engine.ts`.
-
-## Messages
-
-Every message goes through one function, `processInboundMessage` in `src/features/messages/pipeline.ts`, whether it came from WhatsApp (see [WhatsApp](#whatsapp)) or the development simulator:
-
-1. Store the message once, by its external ID. A repeated delivery returns the earlier result and changes nothing.
-2. Claim it. Messages in one conversation are handled one at a time, oldest first; other conversations aren't held up.
-3. Interpret it (outside any transaction). The interpreter only reads the words: intent, dates and times as said, who and which booking.
-4. Record the call's usage.
-5. Decide, in plain code (`src/domain/messages/policy.ts`): identity, dates, the real schedule, Automations settings and the safety rules. The model never decides availability or changes a booking.
-6. Apply the decision in one transaction: a reply, an approval or a message for the owner, the clarifying-question state, and Activity.
-
-### Requests the owner answers
-
-New bookings, moves and cancellations become requests in Attention (`pending_actions`), never changes. The rules that keep them honest:
-
-- **One version at a time.** A newer request about the same booking, or a newer booking request from the same customer, replaces the older one, which stays on record with `superseded_by`. A follow-up like "Actually 6 would be better" is read as a change to the request still waiting: the interpreter sees the earlier message's words (never the booking), and the policy keeps the booking, day and service it was about.
-- **The owner's own action wins.** Moving or cancelling the booking in Schedule (or by owner command) closes requests about it; booking the customer yourself closes their waiting booking request. A closed request can't be approved.
-- **Checked as it's written.** Approving re-checks the time in the app, and the database's slot guard checks it again in the same transaction as the change, the reply, the reminder and Activity. If anything fails, nothing changes and nothing is sent. A time taken since the customer asked shows as taken, with no approve button; a request answered elsewhere disappears with "This request has already been handled."
-- **One question, then the owner.** If the answer to Pingflow's question still isn't clear, the customer gets one fixed line ("I still can't tell which day you mean. I've passed this to the owner.") and the message waits in Attention.
-
-If the message can't be read (no key, timeout, refusal, bad output, or any unexpected error), it's kept, nothing is sent, and it goes to Attention as "Pingflow couldn't understand this message". It can be reprocessed; a retry replaces what the failed attempt raised.
-
-Interpreters (`src/lib/ai/config.ts` picks one):
-
-- **OpenAI**, when `OPENAI_API_KEY` is set: the Responses API with a strict JSON schema (`src/domain/messages/interpretation.ts`), `store: false`, an 8 second timeout and at most one retry of a temporary failure. The output is validated again before use. The prompt is `src/lib/ai/prompts/message-interpreter.ts`; it gets first names only, never phone numbers or bookings, plus the words of an earlier message when it's answering Pingflow's question or changing a request still waiting.
-- **Fixture**, with `PINGFLOW_MESSAGE_INTERPRETER=fixture` in development: knows the evaluation corpora and nothing else. Results say "fixture"; it never poses as OpenAI.
-- **None** otherwise: every message goes to the owner unread.
-
-### Message simulator
-
-In `pnpm dev`, `/app/dev/messages` sends a pretend WhatsApp message from any of your contacts (or another number) through the real pipeline for your business, and shows what happened: identity, interpretation, decision, reply, usage and cost. If the business has an owner number (the demo's is +44 7700 900001), "You, the owner" sends an [owner command](#owner-commands) instead. It lists recent runs and can reprocess failed ones. It isn't in the navigation, and outside development it doesn't exist: the proxy answers 404, and the page and its actions check again.
-
-### Cost tracking
-
-Each model call writes one row to the usage ledger with the tokens the API reported (input, cached input, output), the model, the response ID, the prompt version and an estimated cost. Prices live in one place, `src/lib/ai/pricing.ts`: `gpt-5.6-luna` is $0.20 per million input tokens, $0.02 cached and $1.20 output. Costs are whole millionths of a dollar, worked out in integers, so a typical message records about $0.0002 rather than $0.00. A model with no listed price is recorded with no cost rather than a guessed one.
-
-### Evaluations
-
-`src/domain/messages/fixtures/` holds 41 realistic messages with the interpretation and outcome each should get. `pnpm test` runs them all through the policy with the expected interpretations, offline and at no cost. Neither `pnpm test` nor the end-to-end tests ever call OpenAI; they pass without a key.
-
-Two opt-in commands use the real API. They cost money, need `OPENAI_API_KEY` in `.env.local`, and say what they will send before sending it:
-
-- `pnpm ai:eval` sends all 41 corpus messages (`--limit 20` for fewer) and judges each reading by what Pingflow would then do: intent, dates, times, person, service, clarification, outcome and structured-output validity, with each miss rated critical, important or minor. It counts every API request, stops rather than exceed one retry per message, and reports latency, tokens, cache hits and cost. Results are saved to `results/ai-evals/` (git-ignored) as JSON: the synthetic messages, readings and totals, never keys. It writes nothing to the database.
-- `pnpm ai:eval --automation` does the same for the 40 messages in `src/domain/messages/fixtures/automation-corpus.ts`: bookings, moves, cancellations, availability, one question then the owner, and follow-ups that revise a waiting request.
-- `pnpm ai:eval --owner` does the same for the 37 owner commands in `src/domain/owner/fixtures/`: intent, dates, times, person, clarification and outcome, with a different change rated critical.
-- `pnpm ai:smoke` sends five messages (next booking, availability, reschedule, an unclear one and a cancellation) through the whole pipeline into a fresh local demo business, `ai-smoke@pingflow.test`, and checks the replies, Attention, that no booking changed, and the usage ledger.
-
-## WhatsApp
-
-Pingflow talks to customers through the WhatsApp Cloud API (Graph API v26.0, pinned in `src/lib/whatsapp/config.ts`). It's a channel around the message pipeline, not a second one:
-
-```
-Meta webhook → signature check → whatsapp_events (inbox) → worker
-  → processInboundMessage (the same pipeline as the simulator)
-  → outbound message, created where it always was → message_deliveries (outbox)
-  → worker → send policy → WhatsApp Cloud API → status webhooks → delivered, read, failed
-```
-
-- **Webhook**, `/api/webhooks/whatsapp`. `GET` answers Meta's subscription handshake (`hub.mode`, `hub.verify_token`, `hub.challenge`). `POST` checks `X-Hub-Signature-256` (HMAC-SHA256 of the raw body with `META_APP_SECRET`) before parsing anything, stores each event once by its message or status ID, and answers straight away. Meta retries for up to 36 hours; a repeat is stored once.
-- **Routing** is by Meta's phone number ID to the business's connection, never by the customer's number. Events for an unknown number are kept as unroutable; a disconnected business's messages are ignored.
-- **Inbound.** Text goes through the pipeline exactly as before. Photos, voice notes, documents, locations and the like are stored and go to the owner in Attention without calling the model; reactions and stickers are recorded and left alone. A customer's messages are handled one at a time, oldest first.
-- **Outbound.** Replies, confirmations and reminders are still created in the same transaction as the change they report. If the business is connected and the conversation came in on WhatsApp, the message is queued; a development-simulator conversation is never sent to a real number. The worker sends after the transaction, so a slow or failing WhatsApp never holds up or rolls back a booking change.
-- **Send policy** (`src/domain/channel/send-policy.ts`). Within 24 hours of the customer's last message, text is sent. After that only an approved template: confirmations and reminders use one if configured; replies don't have one, so the owner is told to reply in WhatsApp. Nothing is marked sent that wasn't.
-- **Reliability.** A message WhatsApp accepted is never sent again. Temporary failures (rate limits, WhatsApp unavailable, a connection that never opened) are retried with backoff, at most five attempts. Refusals aren't retried. A send that stopped mid-way can't be checked with WhatsApp, so it's reported to the owner rather than repeated. Refused credentials put the connection in "needs attention" in Settings.
-- **Statuses** only move forward (accepted, sent, delivered, read), however late or often they arrive; a failure never overrides delivered or read.
-- **Usage.** One ledger row per message WhatsApp accepts (`provider: meta`, `send_text` or `send_template`, destination country), updated with WhatsApp's own billable flag and pricing category when statuses arrive. No cost is estimated: there's no maintained rate card, and inbound messages aren't charged by Meta.
-- **Read receipts** aren't sent: on a number shared with the WhatsApp Business app they would clear the owner's unread badges.
-
-### The worker
-
-`runWhatsAppWork` (`src/features/whatsapp/worker.ts`) processes stored events, turns due reminders into messages and sends what's queued. Every step claims its work in the database, so any number can run at once. It runs:
-
-- after each webhook and each owner approval or reply, once the response has gone (Next.js `after`);
-- on a schedule: call `GET /api/internal/whatsapp/work` with `Authorization: Bearer $WHATSAPP_WORKER_SECRET` every minute or so (for example a cron job). This is the guarantee; the other two are the fast path;
-- by hand: `pnpm whatsapp work` (add `--loop` to keep going).
-
-### Setting up a developer connection
-
-This is for building and testing with one number. It is not customer onboarding (see below).
-
-1. In the [Meta App Dashboard](https://developers.facebook.com/apps), create a Business app and add the WhatsApp product. API Setup gives a test business number (or add your own), its phone number ID and the WhatsApp Business account ID. Add your own phone as a test recipient.
-2. Create a system user access token with `whatsapp_business_messaging` and `whatsapp_business_management` (the temporary API Setup token lasts 24 hours). Put the IDs, the token, the App Secret (App settings → Basic), a verify token of your choosing and a worker secret in `.env.local`.
-3. Expose the app over HTTPS. Meta can't reach `localhost`, so use any tunnel (Cloudflare Tunnel, ngrok, …) or a deployed preview. Nothing in the app depends on the tunnel.
-4. In WhatsApp → Configuration, set the callback URL to `https://<your host>/api/webhooks/whatsapp` and the verify token, then subscribe to the `messages` field.
-5. Connect the number to your Pingflow account: `pnpm whatsapp connect you@example.com`. It checks the token with WhatsApp first. Settings then shows it as connected.
-6. To be recognised as a customer, add your phone as a customer's number (or send from a number you've added), then message the business number. Messages from other numbers are treated as unknown.
-7. For reminders and confirmations after 24 hours, create utility templates in WhatsApp Manager, register them (`pnpm whatsapp template you@example.com appointment_reminder <name> en_GB customer_first_name,when`) and check their review status (`pnpm whatsapp templates-sync you@example.com`). Only approved templates are sent. The fields a template can use are in `src/domain/channel/templates.ts`.
-
-Without a tunnel, `pnpm whatsapp simulate you@example.com "When's my next lesson?"` posts a correctly signed, Meta-shaped webhook to your local app. In development, `/app/dev/whatsapp` shows the connection's IDs, recent events, the outbox and templates (never tokens), and can run the worker.
-
-### Owner commands
-
-The owner can message the business number from their own phone to check and change the schedule: "Who have I got tomorrow?", "When is Sarah booked?", "Am I free Friday at 5?", "Move Sarah to Friday at 4", "Cancel Tom tomorrow", "Block Thursday afternoon".
-
-- **Who the owner is.** Only the number in `owner_channel_identities` for that business, set on the server: `pnpm whatsapp owner you@example.com +447700900001` (and `owner-clear`). Never a guess from a name or the wording. With none set, every sender is a customer. Settings → WhatsApp says whether it's set up.
-- **Same pipeline, own rules.** Owner messages are stored, ordered and deduplicated like any other, then read by their own interpreter (`src/lib/ai/owner-interpreter.ts`, `owner_command_v1`, usage recorded as `interpret_owner_command`) and decided by `decideOwnerCommand` (`src/domain/owner/decide.ts`), which only ever sees this business's data. The model never changes anything.
-- **Changes.** A move, cancellation or block happens only when it's unambiguous and valid, through `complete_owner_command`, which checks the booking hasn't changed since, applies it with the same database functions as the app, writes the reply and completes the run in one transaction, once. Anything unclear gets one question; still unclear, "Please update it in Pingflow". Customers aren't messaged about changes, and the reply says so.
-
-### Customers' own numbers
-
-The product promise is that a business keeps its existing WhatsApp Business number. Meta supports that ("coexistence": the WhatsApp Business app and the Cloud API on one number), but only through Embedded Signup run by a Meta Tech Provider with App Review approval. Pingflow doesn't have that yet, so:
-
-- the connection model, states and Settings are built for it (`whatsapp_connections.mode = 'embedded_signup'`);
-- the Embedded Signup flow, the token exchange and encrypted per-business token storage are not built. Credentials come through `WhatsAppCredentialProvider` (`src/lib/whatsapp/credentials.ts`); today its only source is the developer connection's environment. Customers' tokens will need server-only encrypted storage (for example Supabase Vault) behind the same interface;
-- onboarding still offers "Skip for now", and Settings says connecting isn't available yet.
-
-## Usage ledger
-
-`usage_events` is an internal record of what each business costs Pingflow: model calls (tokens, model, request ID), WhatsApp messages (category, destination, billable) and emails, with an estimated cost in millionths of a currency unit. The message pipeline records its model calls and the WhatsApp channel its sends; email will once it exists.
-
-- Record through `src/lib/usage/record.ts` (`recordAiUsage`, `recordMessagingUsage`), or `writeUsage` with the server's client, server-side only. It uses the secret key, so `SUPABASE_SECRET_KEY` must be set on the server.
-- A provider event reported twice (same provider, operation and reference) is stored once.
-- Owners can't read or write it, and nothing in the app shows it.
-
-## Failures
-
-Reads from the database are retried briefly when a failure looks temporary (at most twice, within about four seconds); then the screen says "Pingflow couldn't load this right now." with Try again. Writes are never retried automatically; the database functions refuse a repeat of something already done. The policy is in `src/lib/supabase/bounded-fetch.ts`.
-
-## Sign-in links
-
-Sign-in uses one-time email links (no passwords). The email template, `supabase/templates/magic_link.html`, links to `/auth/callback`, which exchanges the token for a session and sends the user on to `/start`:
-
-- signed out: `/sign-in`
-- signed in, not set up: `/onboarding`
-- set up: `/app`
-
-A session can outlive its account (sessions are signed tokens, checked locally, valid for up to an hour), for example after `pnpm db:reset` deletes local accounts. Before showing onboarding, the app checks the account still exists; if it doesn't, the session is signed out and the sign-in page says "Your session has ended." No need to clear cookies by hand.
-
-For a hosted project, set the Site URL to the app's origin, add `https://<your-domain>/auth/callback` to the allowed redirect URLs, and use the same template for the magic link and confirmation emails.
-
-## Checks
+## Testing
 
 ```sh
 pnpm format:check
 pnpm lint
 pnpm typecheck
-pnpm test               # unit tests (availability, time, messages, onboarding, services, retries, usage)
+pnpm test                # unit tests: availability, dates, message and owner policies, channel rules, environment
 pnpm build
-pnpm test:e2e           # needs the local stack; starts the app on :3100 if it isn't running
+pnpm test:e2e            # database, Chromium and WebKit; starts the app on :3100 if it isn't running
 ```
 
-Run the tests against the local stack only: they create and replace test businesses.
+Install the browsers once with `pnpm exec playwright install chromium
+webkit`. Run the end-to-end tests against the local stack only: they
+create and replace test businesses.
 
-The end-to-end tests run Sarah's reschedule, the owner's answers to processed messages and the WhatsApp Settings and Attention states in Chromium and WebKit. The database tests (`e2e/database/`) check row level security, the message pipeline (flows, repeated deliveries, retries, ordering, privacy, usage), the WhatsApp channel (signed webhooks through to sends and statuses, the 24-hour window, templates, reminders, retries, crash recovery, isolation), the customer-and-booking and services transactions, the booking guard, schedule modes and the usage ledger directly against the local database. None of them call OpenAI or Meta. Install the browsers once with `pnpm exec playwright install chromium webkit`.
+- **Database tests** (`e2e/database/`): row level security and isolation
+  between businesses, the message pipeline, customer approvals (stale
+  times, superseded requests, the owner acting first), owner commands, the
+  WhatsApp channel (signed webhooks, the 24-hour window, templates,
+  reminders, retries, racing workers), bookings and the usage ledger.
+- **Browser tests** (`e2e/*.spec.ts`): the Sarah reschedule story,
+  Attention, onboarding and sign-in, Settings, phone widths, and the
+  production surface (health, headers, refused calls).
 
-## Production
+None of them call OpenAI or Meta. Live checks are separate and opt-in,
+because they cost money: `pnpm ai:eval` (with `--automation` or `--owner`
+for the other corpora) sends the evaluation messages to the real model and
+scores each reading by what Pingflow would then do; `pnpm ai:smoke` runs
+five messages through the whole pipeline into a local demo business.
+Results go to `results/ai-evals/` (git-ignored).
 
-Deploying, operating and the line drawn for the pilot are in `docs/`:
+## WhatsApp
 
-- [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md): environment variables, the deployment checklist (Vercel, Supabase, the scheduled worker, Meta's webhook), migrations, backups, what never to run against production, and the pilot smoke test.
-- [`docs/RUNBOOK.md`](docs/RUNBOOK.md): what to check and do when WhatsApp, the worker, OpenAI or the database misbehaves.
-- [`docs/LIMITATIONS.md`](docs/LIMITATIONS.md): what the MVP doesn't do (including self-service WhatsApp onboarding, which is parked), and what comes after.
+Pingflow talks to customers through the WhatsApp Cloud API. It's a channel
+around the message pipeline, not a second one.
 
-Built in for production:
+- **Webhook**, `/api/webhooks/whatsapp`: `GET` answers Meta's handshake;
+  `POST` checks `X-Hub-Signature-256` against `META_APP_SECRET` before
+  parsing anything, stores each event once and answers straight away.
+  Routing is by Meta's phone number ID, never the customer's number.
+- **Sending:** replies, confirmations and reminders are created in the
+  same transaction as the change they report, then sent by the worker.
+  Within 24 hours of the customer's last message, text; after that, only
+  an approved template. A message WhatsApp accepted is never sent twice,
+  temporary failures are retried (at most five times), and nothing is
+  marked sent that wasn't. A conversation from the development simulator
+  never reaches a real number.
+- **The worker** (`runWhatsAppWork`) processes stored events, sends due
+  reminders and what's queued. It runs after each webhook and approval,
+  on a schedule (`GET /api/internal/whatsapp/work` with `Authorization:
+  Bearer <WHATSAPP_WORKER_SECRET>` or Vercel Cron's `CRON_SECRET`; the
+  schedule is the guarantee), or by hand with `pnpm whatsapp work`.
 
-- **Startup check** (`src/instrumentation.ts`, `src/lib/env.ts`): a missing required variable stops the server with its name in the log; optional ones (OpenAI, WhatsApp) log a warning. A production build stops without the public Supabase values.
-- **Health**: `GET /api/health` (the app is up) and `GET /api/health?ready=1` (and the database answers within 3 seconds). Each says "ok" or "unavailable" and nothing else.
-- **Headers**: no framing, `nosniff`, a referrer and permissions policy, HSTS in production and a content security policy for framing, forms, `<base>` and plugins (`next.config.ts`).
-- **Logs**: `[pingflow]` lines with IDs, counts and outcomes; server errors as one `request_error` line each, with no query strings or headers, and phone numbers and emails masked.
-- **The worker** answers only its own bearer secret or Vercel Cron's (`CRON_SECRET`); anyone else gets a 404.
+### Connecting a developer number
 
-## Code layout
+1. In the Meta App Dashboard, create a Business app with the WhatsApp
+   product; note the phone number ID and WhatsApp Business account ID;
+   create a system user token (`whatsapp_business_messaging`,
+   `whatsapp_business_management`).
+2. Put the token, the IDs, the App Secret, a verify token of your choosing
+   and a worker secret in `.env.local`.
+3. Expose the app over HTTPS (a tunnel or a deployed preview), set the
+   callback URL to `https://<host>/api/webhooks/whatsapp` with your verify
+   token, and subscribe to `messages`.
+4. `pnpm whatsapp connect you@example.com` (it checks the token with Meta
+   once). Settings then shows WhatsApp as connected.
+5. Owner commands: `pnpm whatsapp owner you@example.com +44…` sets the
+   owner's own number (`owner-clear` removes it). With none set, every
+   sender is a customer.
+6. Templates for messages after 24 hours: create them in WhatsApp
+   Manager, then `pnpm whatsapp template you@example.com
+   appointment_reminder <name> en_GB customer_first_name,when` and
+   `pnpm whatsapp templates-sync you@example.com`.
 
-- `src/domain/`: plain TypeScript rules with no I/O. The availability engine, time zones and formatting, the message policy (`messages/`: interpretation schema, dates, identity, replies, decisions), request planning, message templates, reminder policy, onboarding checks, what each line of work starts with (`onboarding/business-types.ts`), usage events and activity wording.
-- `src/domain/owner/`: owner commands: the command schema, the decisions and the replies.
-- `src/lib/ai/`: the interpreters, their configuration, the prompts and model prices. Server-side only.
-- `src/features/messages/`: the inbound message pipeline and the development simulator.
-- `src/domain/channel/`: channel rules with no provider in them: the 24-hour window, the send policy, template fields, delivery wording.
-- `src/lib/whatsapp/`, `src/lib/messaging/`: the WhatsApp Cloud API (transport, webhook parsing and signatures, errors, credentials). Server-side only.
-- `src/features/whatsapp/`: the webhook ingestion, the worker and dispatcher, and Settings.
-- `src/features/<area>/`: data loading (`data.ts`), server actions (`actions.ts`) and the components for each app area.
-- `src/lib/supabase/`: separate browser and server clients, plus the session refresh used by `src/proxy.ts`.
-- `src/app/(marketing)/`: the public site. `src/app/(auth)/`: sign-in and onboarding. `src/app/app/`: the signed-in app.
+Without a tunnel, `pnpm whatsapp simulate you@example.com "When's my next
+lesson?"` posts a correctly signed, Meta-shaped webhook to your local app.
+`pnpm whatsapp status you@example.com` shows the connection and its
+queues; `pnpm whatsapp retry-failed you@example.com` requeues inbound
+events that ran out of retries. The CLI never prints tokens and only touches a non-local database
+with `--allow-remote`.
+
+### What works, and what's parked
+
+- **Works:** a developer connection (one number per deployment, connected
+  by an operator), proven with real inbound and outbound messages; owner
+  commands from the configured number.
+- **Parked:** customers connecting their own WhatsApp Business numbers
+  themselves. That needs Meta Embedded Signup, Tech Provider status, App
+  Review and publication, plus encrypted per-business token storage; none
+  of it is built. Onboarding offers "Skip for now", and Settings says
+  connecting isn't available yet.
+
+## Production and pilot
+
+The MVP is build-complete. Running it for a real pilot is documented in
+`docs/`:
+
+- [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md): environment variables, the
+  deployment checklist (Vercel, Supabase, the scheduled worker, Meta's
+  webhook), migrations, backups, what never to run against production,
+  and the pilot smoke test.
+- [`docs/RUNBOOK.md`](docs/RUNBOOK.md): what to check and do when
+  WhatsApp, the worker, OpenAI or the database misbehaves.
+- [`docs/LIMITATIONS.md`](docs/LIMITATIONS.md): what the MVP doesn't do,
+  and what comes after.
+
+A hosted pilot still needs three setup steps, all in the checklist:
+
+1. **Custom SMTP** for Supabase's sign-in emails (the built-in sender only
+   reaches the project's own team).
+2. **Supabase production auth settings:** the Site URL, the redirect URL
+   (`https://<domain>/auth/callback`) and the repository's magic-link
+   template (`supabase/templates/magic_link.html`).
+3. **A per-minute schedule** for the worker (Vercel Cron with
+   `CRON_SECRET`, or any HTTPS scheduler with `WHATSAPP_WORKER_SECRET`).
+
+Built in for production: a startup check that stops the server if a
+required variable is missing (naming it, never its value); a health
+check at `/api/health` and `/api/health?ready=1`; security headers; logs
+with IDs and outcomes only, and server errors with no query strings,
+headers, phone numbers or emails.
+
+## MVP limitations
+
+No payments or invoicing, no teams, no channels other than WhatsApp, no
+generic workflow builder, no route optimisation, no native app, no
+automatically sent AI-written messages, and customers can't yet connect
+their own WhatsApp number. The full list, and what comes next, is in
+[`docs/LIMITATIONS.md`](docs/LIMITATIONS.md).
