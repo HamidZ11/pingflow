@@ -62,3 +62,14 @@ export function authorisedWorker(
   const expected = Buffer.from(secret);
   return given.length === expected.length && timingSafeEqual(given, expected);
 }
+
+/** The worker route: its own secret, or Vercel Cron's. Neither set: no one. */
+export function authorisedScheduledWork(
+  header: string | null,
+  env: Pick<WhatsAppEnv, "workerSecret" | "cronSecret">,
+): boolean {
+  return (
+    authorisedWorker(header, env.workerSecret) ||
+    authorisedWorker(header, env.cronSecret)
+  );
+}

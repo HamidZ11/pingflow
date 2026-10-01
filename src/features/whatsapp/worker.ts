@@ -142,6 +142,9 @@ async function handleEvent(
       eventId: event.id,
       kind: event.kind,
       attempts,
+      // The last try: the event stays failed until someone retries it
+      // (`pnpm whatsapp retry-failed`). Worth an alert.
+      final: !retry,
       error: error instanceof Error ? error.message : String(error),
     });
     await finish(deps, event, "failed", {

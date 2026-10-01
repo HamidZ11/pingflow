@@ -12,6 +12,8 @@
 //   pnpm whatsapp owner <email> <number>   the owner's own WhatsApp number:
 //                                          messages from it are owner commands
 //   pnpm whatsapp owner-clear <email>
+//   pnpm whatsapp retry-failed <email>     put inbound events that ran out
+//                                          of retries back in the queue
 //
 // Only against the local Supabase unless --allow-remote is passed.
 
@@ -180,6 +182,7 @@ async function status(email?: string) {
   Last inbound      ${connection.last_inbound_at ?? "never"}
   Last outbound     ${connection.last_outbound_at ?? "never"}
   Events pending    ${await count("whatsapp_events", "status", "pending")}
+  Events failed     ${await count("whatsapp_events", "status", "failed")}${(await count("whatsapp_events", "status", "failed")) ? " (pnpm whatsapp retry-failed)" : ""}
   Sends queued      ${await count("message_deliveries", "dispatch", "queued")}
   Templates         ${templates?.length ? templates.map((t) => `${t.purpose}: ${t.name} (${t.language}) ${t.provider_status} [${t.parameters.join(", ")}]`).join("\n                    ") : "none"}
 `);
@@ -376,6 +379,29 @@ async function ownerClear(email?: string) {
   );
 }
 
+// Inbound events that failed every retry (the database was down for a
+// while, say) keep their payload. Requeued, the worker takes them again,
+// oldest first; a message already stored is never stored twice.
+async function retryFailed(email?: string) {
+  const business = await businessFor(email);
+  const { data, error } = await db
+    .from("whatsapp_events")
+    .update({
+      status: "pending",
+      attempts: 0,
+      next_attempt_at: null,
+      claimed_at: null,
+      error_category: null,
+    })
+    .eq("business_id", business.id)
+    .eq("status", "failed")
+    .select("id");
+  if (error) fail(error.message);
+  console.log(
+    `  ${data?.length ?? 0} failed event${data?.length === 1 ? "" : "s"} requeued. Run \`pnpm whatsapp work\` or wait for the scheduled worker.`,
+  );
+}
+
 const commands: Record<string, (...a: string[]) => Promise<void>> = {
   connect,
   disconnect,
@@ -386,6 +412,7 @@ const commands: Record<string, (...a: string[]) => Promise<void>> = {
   simulate,
   owner,
   "owner-clear": ownerClear,
+  "retry-failed": retryFailed,
 };
 
 const run = command ? commands[command] : undefined;

@@ -1,21 +1,22 @@
-import { authorisedWorker } from "@/features/whatsapp/webhook-handler";
+import { authorisedScheduledWork } from "@/features/whatsapp/webhook-handler";
 import { whatsAppServerDeps } from "@/features/whatsapp/server";
 import { runWhatsAppWork } from "@/features/whatsapp/worker";
 import { logServerError } from "@/lib/errors";
 import { whatsAppEnv } from "@/lib/whatsapp/config";
 
-// The scheduled worker: call every minute or so (a cron job, for example)
-// with Authorization: Bearer <WHATSAPP_WORKER_SECRET>. It finishes anything
-// the webhook's own after-response work didn't, retries temporary send
-// failures, and sends due reminders. Answers with counts only.
+// The scheduled worker: call every minute or so with Authorization: Bearer
+// <WHATSAPP_WORKER_SECRET>, or let Vercel Cron call it (it sends Bearer
+// <CRON_SECRET>). It finishes anything the webhook's own after-response
+// work didn't, retries temporary send failures, and sends due reminders.
+// Anyone else gets a 404. Answers with counts only.
 
 export const maxDuration = 60;
 
 async function work(request: Request) {
   if (
-    !authorisedWorker(
+    !authorisedScheduledWork(
       request.headers.get("authorization"),
-      whatsAppEnv().workerSecret,
+      whatsAppEnv(),
     )
   ) {
     return new Response("Not found", { status: 404 });

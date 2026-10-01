@@ -3,12 +3,13 @@ import { devToolsEnabled } from "@/features/messages/dev/enabled";
 import { updateSession } from "@/lib/supabase/proxy";
 
 export async function proxy(request: NextRequest) {
-  // Server-to-server routes (Meta's webhook, the scheduled worker) carry no
-  // session and must reach their handler untouched.
+  // Server-to-server routes (Meta's webhook, the scheduled worker, uptime
+  // checks) carry no session and must reach their handler untouched.
   const { pathname } = request.nextUrl;
   if (
     pathname.startsWith("/api/webhooks/") ||
-    pathname.startsWith("/api/internal/")
+    pathname.startsWith("/api/internal/") ||
+    pathname === "/api/health"
   ) {
     return NextResponse.next();
   }

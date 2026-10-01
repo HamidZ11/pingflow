@@ -198,7 +198,25 @@ pnpm build
 pnpm test:e2e           # needs the local stack; starts the app on :3100 if it isn't running
 ```
 
+Run the tests against the local stack only: they create and replace test businesses.
+
 The end-to-end tests run Sarah's reschedule, the owner's answers to processed messages and the WhatsApp Settings and Attention states in Chromium and WebKit. The database tests (`e2e/database/`) check row level security, the message pipeline (flows, repeated deliveries, retries, ordering, privacy, usage), the WhatsApp channel (signed webhooks through to sends and statuses, the 24-hour window, templates, reminders, retries, crash recovery, isolation), the customer-and-booking and services transactions, the booking guard, schedule modes and the usage ledger directly against the local database. None of them call OpenAI or Meta. Install the browsers once with `pnpm exec playwright install chromium webkit`.
+
+## Production
+
+Deploying, operating and the line drawn for the pilot are in `docs/`:
+
+- [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md): environment variables, the deployment checklist (Vercel, Supabase, the scheduled worker, Meta's webhook), migrations, backups, what never to run against production, and the pilot smoke test.
+- [`docs/RUNBOOK.md`](docs/RUNBOOK.md): what to check and do when WhatsApp, the worker, OpenAI or the database misbehaves.
+- [`docs/LIMITATIONS.md`](docs/LIMITATIONS.md): what the MVP doesn't do (including self-service WhatsApp onboarding, which is parked), and what comes after.
+
+Built in for production:
+
+- **Startup check** (`src/instrumentation.ts`, `src/lib/env.ts`): a missing required variable stops the server with its name in the log; optional ones (OpenAI, WhatsApp) log a warning. A production build stops without the public Supabase values.
+- **Health**: `GET /api/health` (the app is up) and `GET /api/health?ready=1` (and the database answers within 3 seconds). Each says "ok" or "unavailable" and nothing else.
+- **Headers**: no framing, `nosniff`, a referrer and permissions policy, HSTS in production and a content security policy for framing, forms, `<base>` and plugins (`next.config.ts`).
+- **Logs**: `[pingflow]` lines with IDs, counts and outcomes; server errors as one `request_error` line each, with no query strings or headers, and phone numbers and emails masked.
+- **The worker** answers only its own bearer secret or Vercel Cron's (`CRON_SECRET`); anyone else gets a 404.
 
 ## Code layout
 

@@ -68,14 +68,25 @@ function knownError(error: DbError | null | undefined): string | null {
   return null;
 }
 
+/**
+ * Logs are for operators, not a copy of customers' data: phone numbers and
+ * email addresses that a database error echoes back are masked.
+ */
+export function redact(text: string): string {
+  return text
+    .replace(/[^\s@"'(),=]+@[^\s@"'(),=]+\.[a-z]{2,}/gi, "[email]")
+    .replace(/\+\d[\d ]{6,}\d/g, "[number]")
+    .replace(/\b\d{10,15}\b/g, "[number]");
+}
+
 /** Server-side only: what failed, with the database's code and message. */
 export function logServerError(operation: string, error: unknown) {
   const e = (error ?? {}) as DbError;
   console.error(`[pingflow] ${operation} failed`, {
     code: e.code ?? null,
-    message: e.message ?? String(error),
+    message: redact(e.message ?? String(error)),
     hint: e.hint ?? null,
-    details: e.details ?? null,
+    details: e.details ? redact(e.details) : null,
   });
 }
 

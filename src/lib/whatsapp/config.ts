@@ -32,6 +32,8 @@ export type WhatsAppEnv = {
   wabaId: string | null;
   /** Authorises the scheduled worker route. */
   workerSecret: string | null;
+  /** Vercel Cron's own secret, sent as the bearer token on scheduled calls. */
+  cronSecret: string | null;
 };
 
 type Env = Record<string, string | undefined>;
@@ -47,5 +49,6 @@ export function whatsAppEnv(env: Env = process.env): WhatsAppEnv {
     phoneNumberId: read(env, "WHATSAPP_PHONE_NUMBER_ID"),
     wabaId: read(env, "WHATSAPP_WABA_ID"),
     workerSecret: read(env, "WHATSAPP_WORKER_SECRET"),
+    cronSecret: read(env, "CRON_SECRET"),
   };
 }

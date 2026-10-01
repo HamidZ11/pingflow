@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { IngestResult } from "@/features/whatsapp/ingest";
 import {
+  authorisedScheduledWork,
   authorisedWorker,
   handleNotification,
   handleVerification,
@@ -124,5 +125,16 @@ describe("the scheduled worker route", () => {
     expect(authorisedWorker("Bearer s3cre", "s3cret")).toBe(false);
     expect(authorisedWorker("s3cret", "s3cret")).toBe(false);
     expect(authorisedWorker("Bearer ", null)).toBe(false);
+  });
+
+  it("the scheduled worker takes its own secret or Vercel Cron's, nothing else", () => {
+    const env = { workerSecret: "worker-s3cret", cronSecret: "cron-s3cret" };
+    expect(authorisedScheduledWork("Bearer worker-s3cret", env)).toBe(true);
+    expect(authorisedScheduledWork("Bearer cron-s3cret", env)).toBe(true);
+    expect(authorisedScheduledWork("Bearer guess", env)).toBe(false);
+    expect(authorisedScheduledWork(null, env)).toBe(false);
+    const none = { workerSecret: null, cronSecret: null };
+    expect(authorisedScheduledWork("Bearer ", none)).toBe(false);
+    expect(authorisedScheduledWork("Bearer null", none)).toBe(false);
   });
 });

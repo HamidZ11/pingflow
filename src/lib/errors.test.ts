@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { friendlyError } from "@/lib/errors";
+import { friendlyError, redact } from "@/lib/errors";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -36,5 +36,25 @@ describe("database errors", () => {
       ),
     ).toMatch(/taken a moment ago/);
     expect(log).not.toHaveBeenCalled();
+  });
+});
+
+describe("what reaches the logs", () => {
+  it("masks phone numbers and emails a database error echoes back", () => {
+    expect(
+      redact(
+        "Key (business_id, phone_e164)=(0b9f2c1e-4a5b-4c6d-8e7f-90a1b2c3d4e5, +447700900123) already exists",
+      ),
+    ).toBe(
+      "Key (business_id, phone_e164)=(0b9f2c1e-4a5b-4c6d-8e7f-90a1b2c3d4e5, [number]) already exists",
+    );
+    expect(redact("wa_id 447700900123 for sarah@example.com")).toBe(
+      "wa_id [number] for [email]",
+    );
+  });
+
+  it("keeps what operators need: dates, times and IDs", () => {
+    const line = "run 7c1d4b2e-0f3a-4e5b-9c6d-1a2b3c4d5e6f at 2026-10-01 16:00";
+    expect(redact(line)).toBe(line);
   });
 });
